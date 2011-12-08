@@ -1,0 +1,1 @@
+This is the source code for my initial implimentation of Predictive and Asynchronous form of SpeakWords.
