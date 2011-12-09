@@ -37,11 +37,19 @@ Cu.import("resource://gre/modules/Services.jsm");
 // Remember if the keyword or domain was just completed
 let justCompleted = false;
 
+// Keep track of what is being queried
+let currentQuery = "";
+let suggestionIndex = 0;
+
+// Keep track of suggestions based on current query/ref/params
+let suggestedKeywords = [];
+
 // Keep a sorted list of keywords to suggest
 let sortedKeywords = [];
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
+
   // Remember the original query to preserve its original casing
   let origQuery = query;
 
@@ -56,6 +64,11 @@ function getKeyword(query) {
   if (query == "")
     return;
 
+  // If this is same as currentQuery, then just return the next result
+  if (query == currentQuery)
+    return origQuery + (before + suggestedKeywords[suggestionIndex%5])
+      .slice(origQuery.length);
+
   // Get a local keywords reference and ignore domains for multi-word
   let keywords = sortedKeywords;
   if (before != "")
@@ -64,11 +77,16 @@ function getKeyword(query) {
   // Find the first keyword that matches the beginning of the query
   let queryLen = query.length;
   let sortedLen = keywords.length;
+  suggestedKeywords.length = 0;
   for (let i = 0; i < sortedLen; i++) {
     let keyword = keywords[i];
     if (keyword.slice(0, queryLen) == query)
-      return origQuery + (before + keyword).slice(origQuery.length);
+      if (suggestedKeywords.indexOf(keyword) == -1)
+        suggestedKeywords.push(keyword);
+    if (suggestedKeywords.length > 5)
+      break;
   }
+  return origQuery + (before + suggestedKeywords[0]).slice(origQuery.length);
 }
 
 // Automatically suggest a keyword when typing in the location bar
@@ -127,8 +145,8 @@ function addKeywordSuggestions(window) {
 
     // See if we can suggest a keyword if it isn't the current query
     let query = urlBar.textValue;
-    currentQuery = query;
     let keyword = getKeyword(query);
+    currentQuery = query;
     if (keyword == null || keyword == query)
       return;
 
@@ -221,6 +239,23 @@ function addEnterSelects(window) {
     unload(function() popup._appendCurrentResult = orig, window);
   }
 
+  // Function to display the next suggestion based on current query
+  function suggestNextMatch() {
+    justCompleted = false;
+    suggestionIndex++;
+    let keyword = getKeyword(currentQuery);
+    if (keyword == null || keyword == currentQuery)
+      return;
+
+    // Select the end of the suggestion to allow over-typing
+    gURLBar.value = keyword;
+    gURLBar.selectTextRange(currentQuery.length, keyword.length);
+    justCompleted = true;
+
+    // Make sure the search suggestions show up
+    async(function() gURLBar.controller.startSearch(keyword));
+  }
+
   listen(window, gURLBar, "keydown", function(aEvent) {
     let KeyEvent = aEvent;
     switch (aEvent.keyCode) {
@@ -234,6 +269,8 @@ function addEnterSelects(window) {
       // For vertical movement, do nothing
       case KeyEvent.DOM_VK_UP:
       case KeyEvent.DOM_VK_DOWN:
+        if (aEvent.ctrlKey)
+          suggestNextMatch();
         return;
 
       // We're interested in handling enter (return), do so below
