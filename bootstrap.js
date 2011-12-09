@@ -95,16 +95,19 @@ function addKeywordSuggestions(window) {
         if (event.ctrlKey)
           return;
 
+        // Preventing the use of TAB as scrolling of popup results.
+        event.preventDefault();
+        event.stopPropagation();
+
         // Ignore if the selection starts at front or nothing it selected
         let input = event.originalTarget;
         let {selectionEnd, selectionStart} = input;
+
         if (selectionStart == 0 || selectionEnd == selectionStart)
           return;
 
         // Move the selection to the end and stop the normal behavior
         input.setSelectionRange(selectionEnd, selectionEnd);
-        event.preventDefault();
-        event.stopPropagation();
 
         break;
     }
@@ -113,6 +116,8 @@ function addKeywordSuggestions(window) {
   // Watch for urlbar value input changes to suggest keywords
   listen(window, urlBar, "input", function(event) {
     justCompleted = false;
+    currentQuery = "";
+    suggestionIndex = 0;
 
     // Don't try suggesting a keyword when the user wants to delete
     if (deleting) {
@@ -122,6 +127,7 @@ function addKeywordSuggestions(window) {
 
     // See if we can suggest a keyword if it isn't the current query
     let query = urlBar.textValue;
+    currentQuery = query;
     let keyword = getKeyword(query);
     if (keyword == null || keyword == query)
       return;
@@ -132,7 +138,7 @@ function addKeywordSuggestions(window) {
     justCompleted = true;
 
     // Make sure the search suggestions show up
-    async(function() urlBar.controller.startSearch(urlBar.value));
+    async(function() urlBar.controller.startSearch(keyword));
   });
 }
 
@@ -142,6 +148,9 @@ function addEnterSelects(window) {
   let autoSelectOn;
   // Keep track of last shown result's search string
   let lastSearch;
+  // Keep track of what was in gURLBar originally
+  let valueB4Enter;
+  let {async} = makeWindowHelpers(window);
 
   // Add some helper functions to various objects
   let gURLBar = window.gURLBar;
@@ -191,7 +200,7 @@ function addEnterSelects(window) {
         return;
 
       // Unless we just completed a domain, don't auto-select if we have a url
-      if (!justCompleted && gURLBar.willHandle)
+      if (justCompleted && gURLBar.willHandle)
         return;
 
       // We passed all the checks, so pretend the user has the first result
@@ -280,11 +289,35 @@ function addEnterSelects(window) {
         popup.mPopupOpen = false;
 
         // Restore the original popup open value
-        window.setTimeout(function() {
+        async(function() {
           popup.mPopupOpen = mPopupOpen;
-        });
+        }, 10);
         break;
     }
+  });
+
+  // Detect pressing of Escape key and blur out of urlBar
+  listen(window, gURLBar, "keypress", function(event) {
+    switch (event.keyCode) {
+      case event.DOM_VK_ESCAPE:
+        let input = event.originalTarget;
+        let {selectionEnd, selectionStart} = input;
+        if ((selectionStart == 0 || selectionStart == selectionEnd)
+          && selectionEnd == gURLBar.value.length) {
+            event.stopPropagation();
+            event.preventDefault();
+            window.gBrowser.selectedBrowser.focus();
+        }
+        break;
+    }
+  });
+
+  // Handle the gURLBar value upon entering and leaving
+  listen(window, gURLBar, "blur", function(event) {
+    gURLBar.value = valueB4Enter;
+  });
+  listen(window, gURLBar, "focus", function(event) {
+    valueB4Enter = gURLBar.value;
   });
 }
 
