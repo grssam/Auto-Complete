@@ -34,15 +34,12 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
-// Remember if the keyword or domain was just completed
-let justCompleted = false;
-
 // Keep track of what is being queried
 let currentQuery = "";
 let suggestionIndex = 0;
 
 // Keep track of suggestions based on current query/ref/params
-let suggestedKeywords = [];
+let suggestions = [];
 
 // Keep a sorted list of keywords to suggest
 let sortedKeywords = [];
@@ -65,9 +62,12 @@ function getKeyword(query) {
     return;
 
   // If this is same as currentQuery, then just return the next result
-  if (query == currentQuery)
-    return origQuery + (before + suggestedKeywords[suggestionIndex%5])
-      .slice(origQuery.length);
+  if (origQuery == currentQuery)
+    return origQuery + (suggestions.length > 0?
+      (before + suggestions[suggestionIndex%suggestions.length])
+      .slice(origQuery.length):"");
+  else
+    currentQuery = origQuery;
 
   // Get a local keywords reference and ignore domains for multi-word
   let keywords = sortedKeywords;
@@ -77,16 +77,17 @@ function getKeyword(query) {
   // Find the first keyword that matches the beginning of the query
   let queryLen = query.length;
   let sortedLen = keywords.length;
-  suggestedKeywords.length = 0;
+  suggestions = [];
   for (let i = 0; i < sortedLen; i++) {
     let keyword = keywords[i];
     if (keyword.slice(0, queryLen) == query)
-      if (suggestedKeywords.indexOf(keyword) == -1)
-        suggestedKeywords.push(keyword);
-    if (suggestedKeywords.length > 5)
+      if (suggestions.indexOf(keyword) == -1)
+        suggestions.push(keyword);
+    if (suggestions.length == 5)
       break;
   }
-  return origQuery + (before + suggestedKeywords[0]).slice(origQuery.length);
+  return origQuery +
+    (suggestions.length > 0?(before + suggestions[0]).slice(origQuery.length):"");
 }
 
 // Automatically suggest a keyword when typing in the location bar
@@ -133,8 +134,6 @@ function addKeywordSuggestions(window) {
 
   // Watch for urlbar value input changes to suggest keywords
   listen(window, urlBar, "input", function(event) {
-    justCompleted = false;
-    currentQuery = "";
     suggestionIndex = 0;
 
     // Don't try suggesting a keyword when the user wants to delete
@@ -146,14 +145,12 @@ function addKeywordSuggestions(window) {
     // See if we can suggest a keyword if it isn't the current query
     let query = urlBar.textValue;
     let keyword = getKeyword(query);
-    currentQuery = query;
     if (keyword == null || keyword == query)
       return;
 
     // Select the end of the suggestion to allow over-typing
     urlBar.value = keyword;
     urlBar.selectTextRange(query.length, keyword.length);
-    justCompleted = true;
 
     // Make sure the search suggestions show up
     async(function() urlBar.controller.startSearch(keyword));
@@ -218,7 +215,7 @@ function addEnterSelects(window) {
         return;
 
       // Unless we just completed a domain, don't auto-select if we have a url
-      if (justCompleted && gURLBar.willHandle)
+      if (gURLBar.willHandle)
         return;
 
       // We passed all the checks, so pretend the user has the first result
@@ -240,9 +237,8 @@ function addEnterSelects(window) {
   }
 
   // Function to display the next suggestion based on current query
-  function suggestNextMatch() {
-    justCompleted = false;
-    suggestionIndex++;
+  function suggestNextMatch(delta) {
+    suggestionIndex+=delta;
     let keyword = getKeyword(currentQuery);
     if (keyword == null || keyword == currentQuery)
       return;
@@ -250,7 +246,6 @@ function addEnterSelects(window) {
     // Select the end of the suggestion to allow over-typing
     gURLBar.value = keyword;
     gURLBar.selectTextRange(currentQuery.length, keyword.length);
-    justCompleted = true;
 
     // Make sure the search suggestions show up
     async(function() gURLBar.controller.startSearch(keyword));
@@ -266,11 +261,14 @@ function addEnterSelects(window) {
         popup.selectedIndex = -1;
         return;
 
-      // For vertical movement, do nothing
+      // For vertical movement, show alternate suggestions
       case KeyEvent.DOM_VK_UP:
+        if (aEvent.ctrlKey)
+          suggestNextMatch(-1);
+        return;
       case KeyEvent.DOM_VK_DOWN:
         if (aEvent.ctrlKey)
-          suggestNextMatch();
+          suggestNextMatch(+1);
         return;
 
       // We're interested in handling enter (return), do so below
@@ -328,7 +326,7 @@ function addEnterSelects(window) {
         // Restore the original popup open value
         async(function() {
           popup.mPopupOpen = mPopupOpen;
-        }, 10);
+        });
         break;
     }
   });
