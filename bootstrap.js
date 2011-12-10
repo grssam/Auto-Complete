@@ -34,19 +34,26 @@ Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
+// Keep track of the type of suggestion made
+let suggestedByOrder = false;
+
 // Keep track of what is being queried
 let currentQuery = "";
 let suggestionIndex = 0;
 
 // Keep track of suggestions based on current query/ref/params
 let suggestions = [];
+let orderedSuggestions = [];
 
 // Keep a sorted list of keywords to suggest
 let sortedKeywords = [];
+// Keep an ordered list of keywords to suggest
+let orderedKeywords = [];
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
 
+  suggestedByOrder = false;
   // Remember the original query to preserve its original casing
   let origQuery = query;
 
@@ -57,20 +64,53 @@ function getKeyword(query) {
   // Suggest keywords for the last word of the query
   query = query.slice(lastStart).toLowerCase();
 
-  // Don't suggest a keyword for a blank query
-  if (query == "")
+  // Suggest the next word from ordered keywords if possible
+  if (query == "" && before != "" && orderedSuggestions.length > 1) {
+    let afterIndex = orderedSuggestions.indexOf(before.trim()) + 1;
+    // Return if we don't have anything relevant to suggest
+    if (afterIndex >= orderedSuggestions.length)
+      return;
+    // Now that we have a word to display
+    let after = orderedSuggestions[afterIndex];
+    suggestedByOrder = true;
+    return origQuery + (before + after).slice(origQuery.length);
+  }
+  // Don't suggest a keyword when not possible
+  else if (query == "")
     return;
 
   // If this is same as currentQuery, then just return the next result
-  if (origQuery == currentQuery)
-    return origQuery + (suggestions.length > 0?
-      (before + suggestions[suggestionIndex%suggestions.length])
-      .slice(origQuery.length):"");
+  if (origQuery == currentQuery) {
+    let keyword = (suggestions.length > 0
+      ?suggestions[suggestionIndex%suggestions.length]:"");
+    if (before == "" && keyword != "") {
+      let ordered_Keywords = orderedKeywords;
+      ordered_Keywords.some(function(parts) {
+        if (parts.indexOf(keyword) != -1) {
+          orderedSuggestions = parts.slice(parts.indexOf(keyword));
+          return true;
+        }
+      });
+    }
+    return origQuery + (before + keyword).slice(origQuery.length);
+  }
   else
     currentQuery = origQuery;
 
+  // Empty the ordered suggestions
+  orderedSuggestions.length = 0;
+  if (before != "") {
+    // get a local reference to ordered keywords and select the matching set
+    let ordered_Keywords = orderedKeywords;
+    ordered_Keywords.some(function(parts) {
+      if (parts.indexOf(before.trim()) != -1) {
+        orderedSuggestions = parts.slice(parts.indexOf(before.trim()));
+        return true;
+      }
+    });
+  }
   // Get a local keywords reference and ignore domains for multi-word
-  let keywords = sortedKeywords;
+  let keywords = orderedSuggestions.concat(sortedKeywords);
   if (before != "")
     keywords = keywords.filter(function(word) word.indexOf(".") == -1);
 
@@ -85,6 +125,15 @@ function getKeyword(query) {
         suggestions.push(keyword);
     if (suggestions.length == 5)
       break;
+  }
+  if (suggestions.length > 0 && before == "") {
+    let ordered_Keywords = orderedKeywords;
+    ordered_Keywords.some(function(parts) {
+      if (parts.indexOf(suggestions[0].trim()) != -1) {
+        orderedSuggestions = parts.slice(parts.indexOf(suggestions[0].trim()));
+        return true;
+      }
+    });
   }
   return origQuery +
     (suggestions.length > 0?(before + suggestions[0]).slice(origQuery.length):"");
@@ -238,6 +287,9 @@ function addEnterSelects(window) {
 
   // Function to display the next suggestion based on current query
   function suggestNextMatch(delta) {
+    // If we suggested by order, then don't scrol through alt suggestions
+    if (suggestedByOrder)
+      return;
     suggestionIndex+=delta;
     let keyword = getKeyword(currentQuery);
     if (keyword == null || keyword == currentQuery)
@@ -357,7 +409,7 @@ function addEnterSelects(window) {
 }
 
 // Look through various places to find potential keywords
-function populateKeywords() {
+function populateKeywords(window) {
 
   // Keep a nested array of array of keywords -- 2 arrays per entry
   let allKeywords = [];
@@ -528,15 +580,39 @@ function populateKeywords() {
         else if (iterate == 1)
           addDomains(["ORDER BY last_visit_date DESC LIMIT 100", 2]);
         else
-          updateSortedKeywords();
+          updateKeywords();
       },
       args: [iterate]
     });
   }
 
-  function updateSortedKeywords() {
+  function updateKeywords() {
     // Clear out potentially any existing keywords
     sortedKeywords.length = 0;
+    orderedKeywords.length = 0;
+
+    // Do a depth first traversal of the keywords
+    // Check each group of keywords and push them accordingly
+    allKeywords.forEach(function(keywords) {
+      let matched = false;
+      orderedKeywords.some(function(orderedPart) {
+        keywords.some(function(keyword) {
+          if (orderedPart.indexOf(keyword) != -1) {
+            matched = true;
+            return true;
+          }
+        });
+        if (matched) {
+          keywords.forEach(function (part) {
+            if (orderedPart.indexOf(part) == -1)
+              orderedPart.push(part.slice(0));
+          });
+          return true;
+        }
+      });
+      if (!matched && keywords.length > 0)
+        orderedKeywords.push(keywords.slice(0));
+    });
 
     // Do a breadth first traversal of the keywords
     do {
@@ -580,7 +656,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   watchWindows(addEnterSelects);
 
   // Fill up the keyword information!
-  populateKeywords();
+  watchWindows(populateKeywords);
 });
 
 function shutdown(data, reason) {
