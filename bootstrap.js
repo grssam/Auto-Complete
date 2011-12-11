@@ -106,11 +106,12 @@ function getKeyword(query,window) {
     // get a local reference to ordered keywords and select the matching set
     let ordered_Keywords = orderedKeywords;
     ordered_Keywords.some(function(parts) {
-      if (parts.indexOf(before.trim().split(/ /g).slice(-1)) != -1) {
-        let beforeParts = before.split(" ").filter(function(part) {
-          return part.length > 0;
-        });
-        orderedSuggestions = parts.slice(parts.indexOf(beforeParts.slice(-1)[0]));
+      let beforeParts = before.split(" ").filter(function(part) {
+        return part.length > 0;
+      });
+      let divider = parts.indexOf(beforeParts.slice(-1)[0]);
+      if (divider != -1) {
+        orderedSuggestions = parts.slice(divider);
         return true;
       }
     });
