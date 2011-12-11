@@ -519,7 +519,7 @@ function populateKeywords() {
              "JOIN moz_places " +
              "ON id = place_id " +
              "WHERE input NOT NULL " +
-             "ORDER BY use_count DESC",
+             "ORDER BY frecency DESC",
     }, {
       callback: function([resultArray]) {
         resultArray.forEach(function({input, url, title}) {
@@ -577,11 +577,14 @@ function populateKeywords() {
   // Add in some typed subdomains/domains as potential keywords
   function addDomains([extraQuery, iterate]) {
     spinQueryAsync(DBConnection, {
-      names: ["url"],
+      names: ["url","title"],
       query: "SELECT * FROM moz_places WHERE visit_count > 1 " + extraQuery,
     }, {
       callback: function([iterate, resultArray]) {
-        resultArray.forEach(function({url}) addDomain(url));
+        resultArray.forEach(function({url,title}) {
+          addDomain(url);
+          addTitleUrl(function(parts) allKeywords.push(parts), title, url);
+        });
         if (iterate == 0)
           addDomains(["ORDER BY visit_count DESC LIMIT 100", 1]);
         else if (iterate == 1)
