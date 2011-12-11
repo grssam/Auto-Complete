@@ -51,7 +51,7 @@ let sortedKeywords = [];
 let orderedKeywords = [];
 
 // Lookup a keyword to suggest for the provided query
-function getKeyword(query) {
+function getKeyword(query,window) {
 
   suggestedByOrder = false;
   // Remember the original query to preserve its original casing
@@ -66,7 +66,10 @@ function getKeyword(query) {
 
   // Suggest the next word from ordered keywords if possible
   if (query == "" && before != "" && orderedSuggestions.length > 1) {
-    let afterIndex = orderedSuggestions.indexOf(before.trim()) + 1;
+    let beforeParts = before.split(" ").filter(function(part) {
+      return part.length > 0;
+    });
+    let afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
     // Return if we don't have anything relevant to suggest
     if (afterIndex >= orderedSuggestions.length)
       return;
@@ -103,8 +106,11 @@ function getKeyword(query) {
     // get a local reference to ordered keywords and select the matching set
     let ordered_Keywords = orderedKeywords;
     ordered_Keywords.some(function(parts) {
-      if (parts.indexOf(before.trim()) != -1) {
-        orderedSuggestions = parts.slice(parts.indexOf(before.trim()));
+      if (parts.indexOf(before.trim().split(/ /g).slice(-1)) != -1) {
+        let beforeParts = before.split(" ").filter(function(part) {
+          return part.length > 0;
+        });
+        orderedSuggestions = parts.slice(parts.indexOf(beforeParts.slice(-1)[0]));
         return true;
       }
     });
@@ -130,7 +136,7 @@ function getKeyword(query) {
     let ordered_Keywords = orderedKeywords;
     ordered_Keywords.some(function(parts) {
       if (parts.indexOf(suggestions[0].trim()) != -1) {
-        orderedSuggestions = parts.slice(parts.indexOf(suggestions[0].trim()));
+        orderedSuggestions = parts.slice(parts.indexOf(suggestions[0]));
         return true;
       }
     });
@@ -193,7 +199,7 @@ function addKeywordSuggestions(window) {
 
     // See if we can suggest a keyword if it isn't the current query
     let query = urlBar.textValue;
-    let keyword = getKeyword(query);
+    let keyword = getKeyword(query,window);
     if (keyword == null || keyword == query)
       return;
 
@@ -409,7 +415,7 @@ function addEnterSelects(window) {
 }
 
 // Look through various places to find potential keywords
-function populateKeywords(window) {
+function populateKeywords() {
 
   // Keep a nested array of array of keywords -- 2 arrays per entry
   let allKeywords = [];
@@ -655,8 +661,8 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   // Add enter-selects functionality to all windows
   watchWindows(addEnterSelects);
 
-  // Fill up the keyword information!
-  watchWindows(populateKeywords);
+  // Fill up the keyword information
+  populateKeywords();
 });
 
 function shutdown(data, reason) {
