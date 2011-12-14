@@ -29,9 +29,15 @@
 
 <box xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul">
 
+  <setting pref="extensions.AutoComplete.showSearchSuggestion"
+    title="Suggest to search for the input" type="bool">
+      Adds an option to search via current Search Engine,
+      when there is no result available in the Awesomebar Popup.
+  </setting>
+
   <setting pref="extensions.AutoComplete.adaptiveAlgorithm"
     title="Automatically predict based on user History" type="bool">
-      Predicts whether to autocomplete to domain or keyword based on user history.
+      Predicts whether to autocomplete to domain or to a keyword related to that domain.
   </setting>
 
   <setting pref="extensions.AutoComplete.showDomains"

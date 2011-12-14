@@ -499,7 +499,7 @@ function addSearchSuggestion(window) {
     return function(event) {
       if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
         if (((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
-          && gURLBar.value.length > 0 && gURLBar.focused)
+          && gURLBar.value.length > 0 && gURLBar.focused && pref("showSearchSuggestion"))
             this.value = getSearchURL(this.value);
       return orig.call(this, event);
     };
@@ -560,7 +560,8 @@ function addAutoCompleteSearch(window) {
   }
   function searchValid(query) {
     return ((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
-      && gURLBar.value.length > 0 && gURLBar.focused && !deleting && isURI(query) == false;
+      && gURLBar.value.length > 0 && gURLBar.focused && !deleting && isURI(query) == false
+      && pref("showSearchSuggestion");
   }
 
   // Implement the autocomplete search that handles twitter queries
@@ -879,8 +880,10 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   watchWindows(addEnterSelects);
   // Add functionality to do search based on current engine
   // via address bar if no result matches
-  watchWindows(addSearchSuggestion);
-  watchWindows(addAutoCompleteSearch);
+  if (pref("showSearchSuggestion")) {
+    watchWindows(addSearchSuggestion);
+    watchWindows(addAutoCompleteSearch);
+  }
 
   // Fill up the keyword information
   populateKeywords();
