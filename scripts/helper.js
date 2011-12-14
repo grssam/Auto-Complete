@@ -226,3 +226,4 @@ function makeWindowHelpers(window) {
     change: change,
   };
 }
+

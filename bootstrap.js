@@ -87,6 +87,35 @@ function getKeyword(query,window) {
     return origQuery + (before + after).slice(origQuery.length);
   }
   // Don't suggest a keyword when not possible
+  else if (query == "" && before != "") {
+    // get a local reference to ordered keywords and select the matching set
+    let ordered_Keywords = orderedKeywords;
+    ordered_Keywords.some(function(parts) {
+      let beforeParts = before.split(" ").filter(function(part) {
+        return part.length > 0;
+      });
+      let divider = parts.indexOf(beforeParts.slice(-1)[0]);
+      if (divider != -1) {
+        orderedSuggestions = parts.slice(divider);
+        return true;
+      }
+    });
+    if (orderedSuggestions.length > 1) {
+      let beforeParts = before.split(" ").filter(function(part) {
+        return part.length > 0;
+      });
+      let afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
+      // Return if we don't have anything relevant to suggest
+      if (afterIndex >= orderedSuggestions.length)
+        return;
+      // Now that we have a word to display
+      let after = orderedSuggestions[afterIndex];
+      suggestedByOrder = true;
+      return origQuery + (before + after).slice(origQuery.length);
+    }
+    else
+      return;
+  }
   else if (query == "")
     return;
 
@@ -124,6 +153,7 @@ function getKeyword(query,window) {
       }
     });
   }
+
   // Get a local keywords reference and ignore domains for multi-word
   let keywords = orderedSuggestions.concat(sortedKeywords);
   if (before != "")
@@ -156,12 +186,12 @@ function getKeyword(query,window) {
 
 // Automatically suggest a keyword when typing in the location bar
 function addKeywordSuggestions(window) {
-  let urlBar = window.gURLBar;
+  let {gURLBar} = window;
   let {async} = makeWindowHelpers(window);
   deleting = false;
 
   // Look for deletes to handle them better on input
-  listen(window, urlBar, "keypress", function(event) {
+  listen(window, gURLBar, "keypress", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_BACK_SPACE:
       case event.DOM_VK_DELETE:
@@ -171,7 +201,7 @@ function addKeywordSuggestions(window) {
   });
 
   // Detect tab presses to move the selection to the end ready for more
-  listen(window, urlBar.parentNode, "keypress", function(event) {
+  listen(window, gURLBar.parentNode, "keypress", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_TAB:
         // Ignore tabs for switching tabs
@@ -197,27 +227,31 @@ function addKeywordSuggestions(window) {
   });
 
   // Watch for urlbar value input changes to suggest keywords
-  listen(window, urlBar, "input", function(event) {
+  listen(window, gURLBar, "input", function(event) {
     suggestionIndex = 0;
 
     // Don't try suggesting a keyword when the user wants to delete
     if (deleting) {
+      // Updating the current Query for alternate suggestion purpose
+      currentQuery = gURLBar.textValue;
       deleting = false;
+      // Make sure the search suggestions show up without slecting or suggesting
+      async(function() gURLBar.controller.startSearch(gURLBar.value));
       return;
     }
 
     // See if we can suggest a keyword if it isn't the current query
-    let query = urlBar.textValue;
+    let query = gURLBar.textValue;
     let keyword = getKeyword(query,window);
     if (keyword == null || keyword == query)
       return;
 
     // Select the end of the suggestion to allow over-typing
-    urlBar.value = keyword;
-    urlBar.selectTextRange(query.length, keyword.length);
+    gURLBar.value = keyword;
+    gURLBar.selectTextRange(query.length, keyword.length);
 
     // Make sure the search suggestions show up
-    //async(function() urlBar.controller.startSearch(urlBar.value));
+    async(function() gURLBar.controller.startSearch(gURLBar.value));
   });
 }
 
@@ -315,7 +349,7 @@ function addEnterSelects(window) {
     gURLBar.selectTextRange(currentQuery.length, keyword.length);
 
     // Make sure the search suggestions show up
-    //async(function() gURLBar.controller.startSearch(urlBar.value));
+    async(function() gURLBar.controller.startSearch(gURLBar.value));
   }
 
   listen(window, gURLBar, "keydown", function(aEvent) {
