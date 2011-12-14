@@ -465,41 +465,42 @@ function addEnterSelects(window) {
 // Convert a query to a search url
 let convertToSearchURL = function() {};
 
+// Checks if the current input is already a uri
+function isURI(input) {
+  try {
+    // Quit early if the input is already a URI
+    return Services.io.newURI(input, null, null);
+  }
+  catch(ex) {}
+
+  try {
+    // Quit early if the input is domain-like (e.g., site.com/page)
+    return Cc["@mozilla.org/network/effective-tld-service;1"].
+      getService(Ci.nsIEffectiveTLDService).
+      getBaseDomainFromHost(input);
+  }
+  catch(ex) {}
+  return false;
+}
+
 // Function to searching facility if no match found
 function addSearchSuggestion(window) {
   let {change} = makeWindowHelpers(window);
   let {gURLBar} = window;
   let {popup} = gURLBar;
-  // Checks if the current input is already a uri
-  function isURI(input) {
-
-    try {
-      // Quit early if the input is already a URI
-      return Services.io.newURI(input, null, null);
-    }
-    catch(ex) {}
-
-    try {
-      // Quit early if the input is domain-like (e.g., site.com/page)
-      return Cc["@mozilla.org/network/effective-tld-service;1"].
-        getService(Ci.nsIEffectiveTLDService).
-        getBaseDomainFromHost(input);
-    }
-    catch(ex) {}
-    return false;
-  }
 
   // Convert the query into search engine specific url
   function getSearchURL(input) {
-    return isURI(input)?input : convertToSearchURL(input);
+    return isURI(input) != false?input : convertToSearchURL(input);
   }
 
   // Convert inputs to search urls
   change(gURLBar, "_canonizeURL", function(orig) {
     return function(event) {
-      if (((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
-        && gURLBar.value.length > 0 && gURLBar.focused)
-          this.value = getSearchURL(this.value);
+      if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
+        if (((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
+          && gURLBar.value.length > 0 && gURLBar.focused)
+            this.value = getSearchURL(this.value);
       return orig.call(this, event);
     };
   });
@@ -539,6 +540,7 @@ function addAutoCompleteSearch(window) {
   const uuid = Components.ID("42778970-8fae-454d-ad3f-eea88b945af1");
   let {gURLBar} = window;
   let {popup} = gURLBar;
+  let {async} = makeWindowHelpers(window);
 
   // Keep a timer to send a delayed no match
   let timer;
@@ -556,9 +558,9 @@ function addAutoCompleteSearch(window) {
       }
     }, 1000, timer.TYPE_ONE_SHOT);
   }
-  function searchValid() {
+  function searchValid(query) {
     return ((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
-      && gURLBar.value.length > 0 && gURLBar.focused && !deleting;
+      && gURLBar.value.length > 0 && gURLBar.focused && !deleting && isURI(query) == false;
   }
 
   // Implement the autocomplete search that handles twitter queries
@@ -572,42 +574,44 @@ function addAutoCompleteSearch(window) {
       // Always clear the timer on a new search
       clearTimer();
 
-      // Only display Google Search option when no results
-      if (searchValid()) {
-        let label = "Search " + engineName + " for " + query;
-        searchSuggestionDisplayed = true;
-        // Call the listener immediately with one result
-        listener.onSearchResult(search, {
-          getCommentAt: function() engineName + " search: " + query,
-
-          getImageAt: function() SEARCH_ICON,
-
-          getLabelAt: function() label,
-
-          getValueAt: function() convertToSearchURL(query),
-
-          getStyleAt: function() "favicon",
-
-          get matchCount() 1,
-
-          QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
-
-          removeValueAt: function() {},
-
-          searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
-
-          get searchString() query,
-        });
-      }
-      // Send a delayed NOMATCH so the autocomplete doesn't close early
-      else {
-        searchSuggestionDisplayed = false;
-        setTimer(function() {
+      async(function() {
+        // Only display Google Search option when no results
+        if (searchValid(query)) {
+          let label = "Search " + engineName + " for " + query;
+          searchSuggestionDisplayed = true;
+          // Call the listener immediately with one result
           listener.onSearchResult(search, {
-            searchResult: Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
+            getCommentAt: function() engineName + " search: " + query,
+
+            getImageAt: function() SEARCH_ICON,
+
+            getLabelAt: function() label,
+
+            getValueAt: function() convertToSearchURL(query),
+
+            getStyleAt: function() "favicon",
+
+            get matchCount() 1,
+
+            QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
+
+            removeValueAt: function() {},
+
+            searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
+
+            get searchString() query,
           });
-        });
-      }
+        }
+        // Send a delayed NOMATCH so the autocomplete doesn't close early
+        else {
+          searchSuggestionDisplayed = false;
+          setTimer(function() {
+            listener.onSearchResult(search, {
+              searchResult: Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
+            });
+          });
+        }
+      }, 100);
     },
 
     // Nothing to cancel other than a delayed search as results are synchronous
