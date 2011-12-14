@@ -51,7 +51,6 @@ let orderedKeywords = [];
 
 // Keep track of search suggestion and the current search engine
 let searchSuggestionDisplayed = false;
-let currentSearchEngine;
 
 // Keep track of delete keypress
 let deleting = false;
@@ -70,12 +69,13 @@ function getKeyword(query,window) {
   // Suggest keywords for the last word of the query
   query = query.slice(lastStart).toLowerCase();
 
+  let beforeParts,afterIndex,ordered_Keywords;
   // Suggest the next word from ordered keywords if possible
   if (query == "" && before != "" && orderedSuggestions.length > 1) {
-    let beforeParts = before.split(" ").filter(function(part) {
+    beforeParts = before.split(" ").filter(function(part) {
       return part.length > 0;
     });
-    let afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
+    afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
     // Return if we don't have anything relevant to suggest
     if (afterIndex >= orderedSuggestions.length)
       return;
@@ -87,9 +87,9 @@ function getKeyword(query,window) {
   // Don't suggest a keyword when not possible
   else if (query == "" && before != "") {
     // get a local reference to ordered keywords and select the matching set
-    let ordered_Keywords = orderedKeywords;
+    ordered_Keywords = orderedKeywords;
     ordered_Keywords.some(function(parts) {
-      let beforeParts = before.split(" ").filter(function(part) {
+      beforeParts = before.split(" ").filter(function(part) {
         return part.length > 0;
       });
       let divider = parts.indexOf(beforeParts.slice(-1)[0]);
@@ -99,10 +99,10 @@ function getKeyword(query,window) {
       }
     });
     if (orderedSuggestions.length > 1) {
-      let beforeParts = before.split(" ").filter(function(part) {
+      beforeParts = before.split(" ").filter(function(part) {
         return part.length > 0;
       });
-      let afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
+      afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
       // Return if we don't have anything relevant to suggest
       if (afterIndex >= orderedSuggestions.length)
         return;
@@ -122,7 +122,7 @@ function getKeyword(query,window) {
     let keyword = (suggestions.length > 0
       ?suggestions[suggestionIndex%suggestions.length]:"");
     if (before == "" && keyword != "") {
-      let ordered_Keywords = orderedKeywords;
+      ordered_Keywords = orderedKeywords;
       ordered_Keywords.some(function(parts) {
         if (parts.indexOf(keyword) != -1) {
           orderedSuggestions = parts.slice(parts.indexOf(keyword));
@@ -139,9 +139,9 @@ function getKeyword(query,window) {
   orderedSuggestions.length = 0;
   if (before != "") {
     // get a local reference to ordered keywords and select the matching set
-    let ordered_Keywords = orderedKeywords;
+    ordered_Keywords = orderedKeywords;
     ordered_Keywords.some(function(parts) {
-      let beforeParts = before.split(" ").filter(function(part) {
+      beforeParts = before.split(" ").filter(function(part) {
         return part.length > 0;
       });
       let divider = parts.indexOf(beforeParts.slice(-1)[0]);
@@ -170,7 +170,7 @@ function getKeyword(query,window) {
       break;
   }
   if (suggestions.length > 0 && before == "") {
-    let ordered_Keywords = orderedKeywords;
+    ordered_Keywords = orderedKeywords;
     ordered_Keywords.some(function(parts) {
       if (parts.indexOf(suggestions[0].trim()) != -1) {
         orderedSuggestions = parts.slice(parts.indexOf(suggestions[0]));
@@ -463,9 +463,7 @@ function addEnterSelects(window) {
 }
 
 // Convert a query to a search url
-function convertToSearchURL(query) {
-  return currentSearchEngine.getSubmission(query).uri.spec;
-}
+let convertToSearchURL = function() {};
 
 // Function to searching facility if no match found
 function addSearchSuggestion(window) {
@@ -525,10 +523,15 @@ function addAutoCompleteSearch(window) {
   let seachEngineService = Components.classes["@mozilla.org/browser/search-service;1"]
     .getService(Components.interfaces.nsIBrowserSearchService);
   // Getting the current search engine
-  currentSearchEngine = seachEngineService.currentEngine;
+  let currentSearchEngine = seachEngineService.currentEngine;
   // If no current search engine , then using the first one
   if (currentSearchEngine == null)
     currentSearchEngine = seachEngineService.getEngines()[0];
+
+  // Updating the convertToSearchURL function
+  convertToSearchURL = function (query) {
+    return currentSearchEngine.getSubmission(query).uri.spec;
+  };
 
   let engineName = currentSearchEngine.name;
   const contract = "@mozilla.org/autocomplete/search;1?name=" + engineName.toLowerCase();
@@ -536,7 +539,6 @@ function addAutoCompleteSearch(window) {
   const uuid = Components.ID("42778970-8fae-454d-ad3f-eea88b945af1");
   let {gURLBar} = window;
   let {popup} = gURLBar;
-  let {async} = makeWindowHelpers(window);
 
   // Keep a timer to send a delayed no match
   let timer;
@@ -567,47 +569,45 @@ function addAutoCompleteSearch(window) {
 
     // Handle searches from the location bar
     startSearch: function(query, param, previous, listener) {
-      async(function() {
-        // Always clear the timer on a new search
-        clearTimer();
+      // Always clear the timer on a new search
+      clearTimer();
 
-        // Only display Google Search option when no results
-        if (searchValid()) {
-          let label = "Search " + engineName + " for " + query;
-          searchSuggestionDisplayed = true;
-          // Call the listener immediately with one result
+      // Only display Google Search option when no results
+      if (searchValid()) {
+        let label = "Search " + engineName + " for " + query;
+        searchSuggestionDisplayed = true;
+        // Call the listener immediately with one result
+        listener.onSearchResult(search, {
+          getCommentAt: function() engineName + " search: " + query,
+
+          getImageAt: function() SEARCH_ICON,
+
+          getLabelAt: function() label,
+
+          getValueAt: function() convertToSearchURL(query),
+
+          getStyleAt: function() "favicon",
+
+          get matchCount() 1,
+
+          QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
+
+          removeValueAt: function() {},
+
+          searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
+
+          get searchString() query,
+        });
+      }
+      // Send a delayed NOMATCH so the autocomplete doesn't close early
+      else {
+        searchSuggestionDisplayed = false;
+        setTimer(function() {
           listener.onSearchResult(search, {
-            getCommentAt: function() engineName + " search: " + query,
-
-            getImageAt: function() SEARCH_ICON,
-
-            getLabelAt: function() label,
-
-            getValueAt: function() convertToSearchURL(query),
-
-            getStyleAt: function() "favicon",
-
-            get matchCount() 1,
-
-            QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
-
-            removeValueAt: function() {},
-
-            searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
-
-            get searchString() query,
+            searchResult: Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
           });
-        }
-        // Send a delayed NOMATCH so the autocomplete doesn't close early
-        else {
-          searchSuggestionDisplayed = false;
-          setTimer(function() {
-            listener.onSearchResult(search, {
-              searchResult: Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
-            });
-          });
-        }
-      }, 50);
+        });
+      }
     },
 
     // Nothing to cancel other than a delayed search as results are synchronous
