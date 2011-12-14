@@ -24,8 +24,6 @@
  * Contributor:
  *   Girish Sharma <scrapmachines@gmail.com> (Creator)
  *
- * The original file is bootstrap.js for Speak Words.
- *
  * ***** END LICENSE BLOCK ***** */
 
 const {classes: Cc, interfaces: Ci, manager: Cm, utils: Cu} = Components;
