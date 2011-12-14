@@ -28,11 +28,12 @@
  *
  * ***** END LICENSE BLOCK ***** */
 
-const {classes: Cc, interfaces: Ci, utils: Cu} = Components;
+const {classes: Cc, interfaces: Ci, manager: Cm, utils: Cu} = Components;
 const global = this;
 Cu.import("resource://gre/modules/AddonManager.jsm");
 Cu.import("resource://gre/modules/PlacesUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
+Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 
 // Keep track of the type of suggestion made
 let suggestedByOrder = false;
@@ -49,6 +50,13 @@ let orderedSuggestions = [];
 let sortedKeywords = [];
 // Keep an ordered list of keywords to suggest
 let orderedKeywords = [];
+
+// Keep track of search suggestion and the current search engine
+let searchSuggestionDisplayed = false;
+let currentSearchEngine;
+
+// Keep track of delete keypress
+let deleting = false;
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query,window) {
@@ -150,7 +158,7 @@ function getKeyword(query,window) {
 function addKeywordSuggestions(window) {
   let urlBar = window.gURLBar;
   let {async} = makeWindowHelpers(window);
-  let deleting = false;
+  deleting = false;
 
   // Look for deletes to handle them better on input
   listen(window, urlBar, "keypress", function(event) {
@@ -209,7 +217,7 @@ function addKeywordSuggestions(window) {
     urlBar.selectTextRange(query.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() urlBar.controller.startSearch(keyword));
+    //async(function() urlBar.controller.startSearch(urlBar.value));
   });
 }
 
@@ -307,7 +315,7 @@ function addEnterSelects(window) {
     gURLBar.selectTextRange(currentQuery.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(keyword));
+    //async(function() gURLBar.controller.startSearch(urlBar.value));
   }
 
   listen(window, gURLBar, "keydown", function(aEvent) {
@@ -336,7 +344,7 @@ function addEnterSelects(window) {
 
       // For anything else, deselect the entry if the search changed
       default:
-        if (lastSearch != gURLBar.trimmedSearch)
+        if (lastSearch != gURLBar.trimmedSearch && !searchSuggestionDisplayed)
           popup.selectedIndex = -1;
         return;
     }
@@ -346,7 +354,7 @@ function addEnterSelects(window) {
       return;
 
     // Deselect if the selected result isn't for the current search
-    if (!popup.noResults && lastSearch != gURLBar.trimmedSearch) {
+    if (!popup.noResults && lastSearch != gURLBar.trimmedSearch && !searchSuggestionDisplayed) {
       popup.selectedIndex = -1;
 
       // If it's not a url, we'll want to auto-select the first result
@@ -391,16 +399,23 @@ function addEnterSelects(window) {
   });
 
   // Detect pressing of Escape key and blur out of urlBar
-  listen(window, gURLBar, "keypress", function(event) {
+  listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_ESCAPE:
         let input = event.originalTarget;
         let {selectionEnd, selectionStart} = input;
+        event.stopPropagation();
+        event.preventDefault();
         if ((selectionStart == 0 || selectionStart == selectionEnd)
-          && selectionEnd == gURLBar.value.length) {
-            event.stopPropagation();
-            event.preventDefault();
+          && selectionEnd == gURLBar.value.length && !popup.mPopupOpen)
             window.gBrowser.selectedBrowser.focus();
+        else if (popup.mPopupOpen) {
+          popup.selectedIndex = -1;
+          popup.hidePopup();
+        }
+        else {
+          gURLBar.value = valueB4Enter;
+          gURLBar.selectTextRange(0, gURLBar.value.length);
         }
         break;
     }
@@ -412,6 +427,168 @@ function addEnterSelects(window) {
   });
   listen(window, gURLBar, "focus", function(event) {
     valueB4Enter = gURLBar.value;
+  });
+}
+
+// Convert a query to a search url
+function convertToSearchURL(query) {
+  return currentSearchEngine.getSubmission(query).uri.spec;
+}
+
+// Function to searching facility if no match found
+function addSearchSuggestion(window) {
+  let {change} = makeWindowHelpers(window);
+  let {gURLBar} = window;
+  let {popup} = gURLBar;
+  // Checks if the current input is already a uri
+  function isURI(input) {
+
+    try {
+      // Quit early if the input is already a URI
+      return Services.io.newURI(input, null, null);
+    }
+    catch(ex) {}
+
+    try {
+      // Quit early if the input is domain-like (e.g., site.com/page)
+      return Cc["@mozilla.org/network/effective-tld-service;1"].
+        getService(Ci.nsIEffectiveTLDService).
+        getBaseDomainFromHost(input);
+    }
+    catch(ex) {}
+    return false;
+  }
+
+  // Convert the query into search engine specific url
+  function getSearchURL(input) {
+    return isURI(input)?input : convertToSearchURL(input);
+  }
+
+  // Convert inputs to search urls
+  change(gURLBar, "_canonizeURL", function(orig) {
+    return function(event) {
+      if (((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
+        && gURLBar.value.length > 0 && gURLBar.focused)
+          this.value = getSearchURL(this.value);
+      return orig.call(this, event);
+    };
+  });
+
+
+  // Provide a way to set the autocomplete search engines and initialize
+  function setSearch(engines) {
+    gURLBar.setAttribute("autocompletesearch", engines);
+    gURLBar.mSearchNames = null;
+    gURLBar.initSearchNames();
+  };
+
+  // Add in the twitter search and remove on cleanup
+  let origSearch = gURLBar.getAttribute("autocompletesearch");
+  setSearch("google " + origSearch);
+  unload(function() setSearch(origSearch));
+}
+
+// Add an autocomplete search engine to provide location bar suggestions
+function addAutoCompleteSearch(window) {
+  let seachEngineService = Components.classes["@mozilla.org/browser/search-service;1"]
+    .getService(Components.interfaces.nsIBrowserSearchService);
+  // Getting the current search engine
+  currentSearchEngine = seachEngineService.currentEngine;
+  // If no current search engine , then using the first one
+  if (currentSearchEngine == null)
+    currentSearchEngine = seachEngineService.getEngines()[0];
+
+  let engineName = currentSearchEngine.name;
+  const contract = "@mozilla.org/autocomplete/search;1?name=" + engineName.toLowerCase();
+  const desc = engineName + " AutoComplete";
+  const uuid = Components.ID("42778970-8fae-454d-ad3f-eea88b945af1");
+  let {gURLBar} = window;
+  let {popup} = gURLBar;
+  let {async} = makeWindowHelpers(window);
+
+  // Keep a timer to send a delayed no match
+  let timer;
+  function clearTimer() {
+    if (timer != null)
+      timer.cancel();
+    timer = null;
+  }
+  function setTimer(callback) {
+    timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
+    timer.initWithCallback({
+      notify: function() {
+        timer = null;
+        callback();
+      }
+    }, 1000, timer.TYPE_ONE_SHOT);
+  }
+  function searchValid() {
+    return ((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
+      && gURLBar.value.length > 0 && gURLBar.focused && !deleting;
+  }
+
+  // Implement the autocomplete search that handles twitter queries
+  let search = {
+    createInstance: function(outer, iid) search.QueryInterface(iid),
+
+    QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteSearch]),
+
+    // Handle searches from the location bar
+    startSearch: function(query, param, previous, listener) {
+      async(function() {
+        // Always clear the timer on a new search
+        clearTimer();
+
+        // Only display Google Search option when no results
+        if (searchValid()) {
+          let label = "Search " + engineName + " for " + query;
+          searchSuggestionDisplayed = true;
+          // Call the listener immediately with one result
+          listener.onSearchResult(search, {
+            getCommentAt: function() engineName + " search: " + query,
+
+            getImageAt: function() SEARCH_ICON,
+
+            getLabelAt: function() label,
+
+            getValueAt: function() convertToSearchURL(query),
+
+            getStyleAt: function() "favicon",
+
+            get matchCount() 1,
+
+            QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
+
+            removeValueAt: function() {},
+
+            searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
+
+            get searchString() query,
+          });
+        }
+        // Send a delayed NOMATCH so the autocomplete doesn't close early
+        else {
+          searchSuggestionDisplayed = false;
+          setTimer(function() {
+            listener.onSearchResult(search, {
+              searchResult: Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
+            });
+          });
+        }
+      }, 50);
+    },
+
+    // Nothing to cancel other than a delayed search as results are synchronous
+    stopSearch: function() {
+      clearTimer();
+    },
+  };
+
+  // Register this autocomplete search service and clean up when necessary
+  const registrar = Ci.nsIComponentRegistrar;
+  Cm.QueryInterface(registrar).registerFactory(uuid, desc, contract, search);
+  unload(function() {
+    Cm.QueryInterface(registrar).unregisterFactory(uuid, search);
   });
 }
 
@@ -664,6 +841,10 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   watchWindows(addKeywordSuggestions);
   // Add enter-selects functionality to all windows
   watchWindows(addEnterSelects);
+  // Add functionality to do search based on current engine
+  // via address bar if no result matches
+  watchWindows(addSearchSuggestion);
+  watchWindows(addAutoCompleteSearch);
 
   // Fill up the keyword information
   populateKeywords();
