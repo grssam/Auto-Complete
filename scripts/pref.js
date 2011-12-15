@@ -45,7 +45,6 @@ pref.defaults = {
   showBookmarks: true,
   showDomains: true,
   showSearchKeywords: true,
-  adaptiveAlgorithm: true,
   showSearchSuggestion: true
 };
 

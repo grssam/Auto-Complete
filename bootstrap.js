@@ -593,23 +593,14 @@ function addAutoCompleteSearch(window) {
           // Call the listener immediately with one result
           listener.onSearchResult(search, {
             getCommentAt: function() engineName + " search: " + gURLBar.value,
-
             getImageAt: function() SEARCH_ICON,
-
             getLabelAt: function() label,
-
             getValueAt: function() convertToSearchURL(gURLBar.value),
-
             getStyleAt: function() "favicon",
-
             get matchCount() 1,
-
             QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
-
             removeValueAt: function() {},
-
             searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
-
             get searchString() gURLBar.value,
           });
         }
@@ -621,7 +612,6 @@ function addAutoCompleteSearch(window) {
           (searchSuggestionDisplayed?350:50));
     },
 
-    // Nothing to cancel other than a delayed search as results are synchronous
     stopSearch: function() {},
   };
 
@@ -736,8 +726,8 @@ function populateKeywords() {
              "FROM moz_inputhistory " +
              "JOIN moz_places " +
              "ON id = place_id " +
-             "WHERE input NOT NULL " +
-             "ORDER BY frecency DESC",
+             "ORDER BY frecency DESC " +
+             "LIMIT 250",
     }, {
       callback: function([resultArray]) {
         resultArray.forEach(function({input, url, title}) {
@@ -875,7 +865,6 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     "showBookmarks",
     "showDomains",
     "showSearchKeywords",
-    "adaptiveAlgorithm",
   ], function() populateKeywords());
 
   // Add suggestions to all windows
