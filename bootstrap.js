@@ -231,7 +231,7 @@ function addKeywordSuggestions(window) {
       currentQuery = gURLBar.textValue;
       deleting = false;
       // Make sure the search suggestions show up without slecting or suggesting
-      async(function() gURLBar.controller.startSearch(gURLBar.value), 10);
+      async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
       return;
     }
 
@@ -246,7 +246,7 @@ function addKeywordSuggestions(window) {
     gURLBar.selectTextRange(query.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(gURLBar.value), 10);
+    async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
   });
 }
 
@@ -346,7 +346,7 @@ function addEnterSelects(window) {
     gURLBar.selectTextRange(currentQuery.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(gURLBar.value), 10);
+    async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
   }
 
   listen(window, gURLBar, "keydown", function(aEvent) {
@@ -543,20 +543,32 @@ function addAutoCompleteSearch(window) {
 
   function searchValid(query) {
     return ((popup._matchCount == 1 && searchSuggestionDisplayed)
-      || popup._matchCount == 0) && gURLBar.value.length > 0
-      && isURI(query) == false && pref("showSearchSuggestion");
+      || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
+      && gURLBar.value.length > 0 && isURI(query) == false
+      && pref("showSearchSuggestion");
   }
 
   let hasDeleted = false;
+  let hasMoved = false;
   // Look for deletes to improve the timing of search suggestions
   listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_BACK_SPACE:
       case event.DOM_VK_DELETE:
         hasDeleted = true;
+        hasMoved = true;
+        break;
+      case event.DOM_VK_DOWN:
+      case event.DOM_VK_UP:
+      case event.DOM_VK_LEFT:
+      case event.DOM_VK_RIGHT:
+      case event.DOM_VK_HOME:
+      case event.DOM_VK_END:
+        hasMoved = true;
         break;
       default:
         hasDeleted = false;
+        hasMoved = false;
         break;
     }
   });
@@ -570,19 +582,23 @@ function addAutoCompleteSearch(window) {
     // Handle searches from the location bar
     startSearch: function(query, param, previous, listener) {
       async(function() {
+        // Quit early if query is same as previous one
+        if (gURLBar.value == previous)
+          return;
+
         // Only display Google Search option when no results
-        if (searchValid(query)) {
-          let label = "Search " + engineName + " for " + query;
+        if (searchValid(gURLBar.value)) {
+          let label = "Search " + engineName + " for " + gURLBar.value;
           searchSuggestionDisplayed = true;
           // Call the listener immediately with one result
           listener.onSearchResult(search, {
-            getCommentAt: function() engineName + " search: " + query,
+            getCommentAt: function() engineName + " search: " + gURLBar.value,
 
             getImageAt: function() SEARCH_ICON,
 
             getLabelAt: function() label,
 
-            getValueAt: function() convertToSearchURL(query),
+            getValueAt: function() convertToSearchURL(gURLBar.value),
 
             getStyleAt: function() "favicon",
 
@@ -594,14 +610,15 @@ function addAutoCompleteSearch(window) {
 
             searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
 
-            get searchString() query,
+            get searchString() gURLBar.value,
           });
         }
         // Send a delayed NOMATCH so the autocomplete doesn't close early
         else {
           searchSuggestionDisplayed = false;
         }
-      }, (searchSuggestionDisplayed && !hasDeleted)?5:350);
+      }, (searchSuggestionDisplayed && !hasDeleted)?10:
+          (searchSuggestionDisplayed?350:50));
     },
 
     // Nothing to cancel other than a delayed search as results are synchronous
