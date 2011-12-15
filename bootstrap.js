@@ -547,6 +547,20 @@ function addAutoCompleteSearch(window) {
       && isURI(query) == false && pref("showSearchSuggestion");
   }
 
+  let hasDeleted = false;
+  // Look for deletes to improve the timing of search suggestions
+  listen(window, gURLBar, "keydown", function(event) {
+    switch (event.keyCode) {
+      case event.DOM_VK_BACK_SPACE:
+      case event.DOM_VK_DELETE:
+        hasDeleted = true;
+        break;
+      default:
+        hasDeleted = false;
+        break;
+    }
+  });
+
   // Implement the autocomplete search that handles twitter queries
   let search = {
     createInstance: function(outer, iid) search.QueryInterface(iid),
@@ -587,7 +601,7 @@ function addAutoCompleteSearch(window) {
         else {
           searchSuggestionDisplayed = false;
         }
-      }, 350);
+      }, (searchSuggestionDisplayed && !hasDeleted)?5:350);
     },
 
     // Nothing to cancel other than a delayed search as results are synchronous
