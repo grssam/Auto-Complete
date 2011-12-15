@@ -52,9 +52,6 @@ let orderedKeywords = [];
 // Keep track of search suggestion and the current search engine
 let searchSuggestionDisplayed = false;
 
-// Keep track of delete keypress
-let deleting = false;
-
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query,window) {
 
@@ -186,7 +183,7 @@ function getKeyword(query,window) {
 function addKeywordSuggestions(window) {
   let {gURLBar} = window;
   let {async} = makeWindowHelpers(window);
-  deleting = false;
+  let deleting = false;
 
   // Look for deletes to handle them better on input
   listen(window, gURLBar, "keypress", function(event) {
@@ -234,7 +231,7 @@ function addKeywordSuggestions(window) {
       currentQuery = gURLBar.textValue;
       deleting = false;
       // Make sure the search suggestions show up without slecting or suggesting
-      async(function() gURLBar.controller.startSearch(gURLBar.value));
+      async(function() gURLBar.controller.startSearch(gURLBar.value), 10);
       return;
     }
 
@@ -249,7 +246,7 @@ function addKeywordSuggestions(window) {
     gURLBar.selectTextRange(query.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(gURLBar.value));
+    async(function() gURLBar.controller.startSearch(gURLBar.value), 10);
   });
 }
 
@@ -300,7 +297,9 @@ function addEnterSelects(window) {
   let (orig = popup._appendCurrentResult) {
     popup._appendCurrentResult = function() {
       // Run the original first to get results added
-      orig.apply(this, arguments);
+      try {
+        orig.apply(this, arguments);
+      } catch (ex) {}
 
       // Don't bother if something is already selected
       if (popup.selectedIndex >= 0)
@@ -347,7 +346,7 @@ function addEnterSelects(window) {
     gURLBar.selectTextRange(currentQuery.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(gURLBar.value));
+    async(function() gURLBar.controller.startSearch(gURLBar.value), 10);
   }
 
   listen(window, gURLBar, "keydown", function(aEvent) {
@@ -498,8 +497,8 @@ function addSearchSuggestion(window) {
   change(gURLBar, "_canonizeURL", function(orig) {
     return function(event) {
       if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
-        if (((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
-          && gURLBar.value.length > 0 && gURLBar.focused && pref("showSearchSuggestion"))
+        if (((popup._matchCount == 1 && searchSuggestionDisplayed)
+          || popup._matchCount == 0) && gURLBar.value.length > 0 && pref("showSearchSuggestion"))
             this.value = getSearchURL(this.value);
       return orig.call(this, event);
     };
@@ -542,26 +541,10 @@ function addAutoCompleteSearch(window) {
   let {popup} = gURLBar;
   let {async} = makeWindowHelpers(window);
 
-  // Keep a timer to send a delayed no match
-  let timer;
-  function clearTimer() {
-    if (timer != null)
-      timer.cancel();
-    timer = null;
-  }
-  function setTimer(callback) {
-    timer = Cc["@mozilla.org/timer;1"].createInstance(Ci.nsITimer);
-    timer.initWithCallback({
-      notify: function() {
-        timer = null;
-        callback();
-      }
-    }, 1000, timer.TYPE_ONE_SHOT);
-  }
   function searchValid(query) {
-    return ((popup._matchCount == 1 && searchSuggestionDisplayed) || popup._matchCount == 0)
-      && gURLBar.value.length > 0 && gURLBar.focused && !deleting && isURI(query) == false
-      && pref("showSearchSuggestion");
+    return ((popup._matchCount == 1 && searchSuggestionDisplayed)
+      || popup._matchCount == 0) && gURLBar.value.length > 0
+      && isURI(query) == false && pref("showSearchSuggestion");
   }
 
   // Implement the autocomplete search that handles twitter queries
@@ -572,9 +555,6 @@ function addAutoCompleteSearch(window) {
 
     // Handle searches from the location bar
     startSearch: function(query, param, previous, listener) {
-      // Always clear the timer on a new search
-      clearTimer();
-
       async(function() {
         // Only display Google Search option when no results
         if (searchValid(query)) {
@@ -606,19 +586,12 @@ function addAutoCompleteSearch(window) {
         // Send a delayed NOMATCH so the autocomplete doesn't close early
         else {
           searchSuggestionDisplayed = false;
-          setTimer(function() {
-            listener.onSearchResult(search, {
-              searchResult: Ci.nsIAutoCompleteResult.RESULT_NOMATCH,
-            });
-          });
         }
-      }, 100);
+      }, 350);
     },
 
     // Nothing to cancel other than a delayed search as results are synchronous
-    stopSearch: function() {
-      clearTimer();
-    },
+    stopSearch: function() {},
   };
 
   // Register this autocomplete search service and clean up when necessary
