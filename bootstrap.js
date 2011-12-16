@@ -52,6 +52,9 @@ let orderedKeywords = [];
 // Keep track of search suggestion and the current search engine
 let searchSuggestionDisplayed = false;
 
+// Global link to blob file url
+let blobURL;
+
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query,window) {
 
@@ -805,54 +808,52 @@ function populateKeywords() {
   }
 
   function updateKeywords() {
-    // Clear out potentially any existing keywords
-    sortedKeywords.length = 0;
-    orderedKeywords.length = 0;
-
-    // Do a depth first traversal of the keywords
-    // Check each group of keywords and push them accordingly
-    allKeywords.forEach(function(keywords) {
-      let matched = false;
-      orderedKeywords.some(function(orderedPart) {
-        keywords.some(function(keyword) {
-          if (orderedPart.indexOf(keyword) != -1) {
-            matched = true;
-            return true;
-          }
-        });
-        if (matched) {
-          keywords.forEach(function (part) {
-            if (orderedPart.indexOf(part) == -1)
-              orderedPart.push(part.slice(0));
-          });
-          return true;
-        }
-      });
-      if (!matched && keywords.length > 0)
-        orderedKeywords.push(keywords.slice(0));
-    });
-
-    // Do a breadth first traversal of the keywords
-    do {
-      // Remove any empty results and stop if there's no more
-      allKeywords = allKeywords.filter(function(keywords) keywords.length > 0);
-      if (allKeywords.length == 0)
-        break;
-
-      // Get the first keyword of each result and add if it doesn't exist
-      allKeywords.map(function(keywords) {
-        let keyword = keywords.shift();
-        if (sortedKeywords.indexOf(keyword) == -1) {
-          sortedKeywords.push(keyword);
-        }
-      });
-    } while (true);
+    let worker = new Worker(blobURL);
+    function workerMessageHandler(event) {
+      [orderedKeywords, sortedKeywords] = JSON.parse(event.data);
+      worker.removeEventListener('message', workerMessageHandler, false);
+      worker.terminate();
+      worker = null;
+    }
+    worker.addEventListener('message', workerMessageHandler, false);
+    worker.postMessage(JSON.stringify(allKeywords));
   }
+}
+
+function makeBlobFile(window) {
+  let bb = new window.MozBlobBuilder();
+  bb.append("self.addEventListener('message', function(e) {" +
+    "var sK = [],oK = [],aK = JSON.parse(e.data);" +
+    "aK.forEach(function(K) {" +
+      "var m = false;" +
+      "oK.some(function(orderedPart) {" +
+        "K.some(function(k) {" +
+          "if (orderedPart.indexOf(k) != -1) {" +
+            "m = true;return true;}" +
+        "}); if (m) {" +
+          "K.forEach(function (part) {" +
+            "if (orderedPart.indexOf(part) == -1)" +
+              "orderedPart.push(part.slice(0));" +
+          "});return true;}});" +
+      "if (!m && K.length > 0)" +
+        "oK.push(K.slice(0));});" +
+    "do {" +
+      "aK = aK.filter(function(K) K.length > 0);" +
+      "if (aK.length == 0) break;" +
+      "aK.map(function(K) {" +
+        "var k = K.shift();" +
+        "if (sK.indexOf(k) == -1) {sK.push(k);" +
+        "}});} while (true);" +
+    "self.postMessage(JSON.stringify([oK, sK]));}, false);");
+
+  // Obtain a blob URL reference to our worker 'file'.
+  blobURL = window.URL.createObjectURL(bb.getBlob());
 }
 
 // Handle the add-on being activated on install/enable 
 function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   // Load various javascript includes for helper functions
+  gAddon = addon;
   ["pref", "helper"].forEach(function(fileName) {
     let fileURI = addon.getResourceURI("scripts/" + fileName + ".js");
     Services.scriptloader.loadSubScript(fileURI.spec, global);
@@ -877,6 +878,9 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     watchWindows(addSearchSuggestion);
     watchWindows(addAutoCompleteSearch);
   }
+
+  // Create a one time blob file
+  watchWindows(makeBlobFile);
 
   // Fill up the keyword information
   populateKeywords();
