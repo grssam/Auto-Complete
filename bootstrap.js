@@ -52,8 +52,8 @@ let orderedKeywords = [];
 // Keep track of search suggestion and the current search engine
 let searchSuggestionDisplayed = false;
 
-// Global link to blob file url
-let blobURL;
+// Global link to blob file url and worker
+let blobURL, worker;
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query,window) {
@@ -627,7 +627,7 @@ function addAutoCompleteSearch(window) {
 }
 
 // Look through various places to find potential keywords
-function populateKeywords() {
+function populateKeywords(window) {
 
   // Keep a nested array of array of keywords -- 2 arrays per entry
   let allKeywords = [];
@@ -801,26 +801,15 @@ function populateKeywords() {
         else if (iterate == 1)
           addDomains(["ORDER BY last_visit_date DESC LIMIT 100", 2]);
         else
-          updateKeywords();
+          worker.postMessage(JSON.stringify(allKeywords));
       },
       args: [iterate]
     });
   }
 
-  function updateKeywords() {
-    let worker = new Worker(blobURL);
-    function workerMessageHandler(event) {
-      [orderedKeywords, sortedKeywords] = JSON.parse(event.data);
-      worker.removeEventListener('message', workerMessageHandler, false);
-      worker.terminate();
-      worker = null;
-    }
-    worker.addEventListener('message', workerMessageHandler, false);
-    worker.postMessage(JSON.stringify(allKeywords));
-  }
 }
 
-function makeBlobFile(window) {
+function createWorker(window) {
   let bb = new window.MozBlobBuilder();
   bb.append("self.addEventListener('message', function(e) {" +
     "var sK = [],oK = [],aK = JSON.parse(e.data);" +
@@ -848,6 +837,23 @@ function makeBlobFile(window) {
 
   // Obtain a blob URL reference to our worker 'file'.
   blobURL = window.URL.createObjectURL(bb.getBlob());
+
+  // Creating the worker to be used whenever by the addon
+  worker = new Worker(blobURL);
+  // Adding the event Handler
+  function workerMessageHandler(event) {
+    [orderedKeywords, sortedKeywords] = JSON.parse(event.data);
+  }
+  worker.addEventListener('message', workerMessageHandler, false);
+
+  // Calling the function to add keywords
+  populateKeywords();
+
+  unload(function() {
+    worker.removeEventListener('message', workerMessageHandler, false);
+    worker.terminate();
+    worker = null;
+  }, window);
 }
 
 // Handle the add-on being activated on install/enable 
@@ -879,10 +885,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   }
 
   // Create a one time blob file
-  watchWindows(makeBlobFile);
-
-  // Fill up the keyword information
-  populateKeywords();
+  watchWindows(createWorker);
 });
 
 function shutdown(data, reason) {
