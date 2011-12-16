@@ -609,7 +609,7 @@ function addAutoCompleteSearch(window) {
           searchSuggestionDisplayed = false;
         }
       }, (searchSuggestionDisplayed && !hasDeleted)?10:
-          (searchSuggestionDisplayed?350:50));
+          (searchSuggestionDisplayed?350:150));
     },
 
     stopSearch: function() {},
