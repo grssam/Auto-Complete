@@ -7,7 +7,7 @@
     <homepageURL>https://addons.mozilla.org/en-US/firefox/addon/autocomplete/</homepageURL>
     <id>AutoComplete@girishsharma</id>
     <name>Auto Complete</name>
-    <version>0.9</version>
+    <version>1</version>
     <bootstrap>true</bootstrap>
     <type>2</type>
     <optionsType>2</optionsType>
