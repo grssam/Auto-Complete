@@ -853,7 +853,6 @@ function makeBlobFile(window) {
 // Handle the add-on being activated on install/enable 
 function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   // Load various javascript includes for helper functions
-  gAddon = addon;
   ["pref", "helper"].forEach(function(fileName) {
     let fileURI = addon.getResourceURI("scripts/" + fileName + ".js");
     Services.scriptloader.loadSubScript(fileURI.spec, global);
