@@ -23,6 +23,8 @@
  *
  * Contributor:
  *   Girish Sharma <scrapmachines@gmail.com> (Creator)
+ *   Edward Lee <edilee@mozilla.com>
+ *   Erik Vold <erikvvold@gmail.com>
  *
  * ***** END LICENSE BLOCK ***** */
 
@@ -436,7 +438,7 @@ function addEnterSelects(window) {
     }
   });
 
-  // Detect pressing of Escape key and blur out of urlBar
+  // Detect pressing of Escape key and blur out of gURLBar
   listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_ESCAPE:
@@ -859,6 +861,208 @@ function createWorker(window) {
   }, window);
 }
 
+// Fucntion to add a preview for domains and searches
+function addPreviews(window) {
+  let {gURLBar, gBrowser} = window;
+  let popup = gURLBar.popup;
+  let richBox = popup.richlistbox;
+
+  // Shorten the results so that previews are visible
+  let origRows = gURLBar.getAttribute("maxrows");
+  gURLBar.setAttribute("maxrows", 3);
+  unload(function() gURLBar.setAttribute("maxrows", origRows), window);
+
+  let preview;
+  // Provide a way to get rid of the preview from the current tab
+  function removePreview() {
+    if (preview != null) {
+      preview.parentNode.removeChild(preview);
+      preview = null;
+    }
+  }
+
+  // Provide a way to replace the current tab with the preview
+  function persistPreview() {
+    if (preview == null)
+      return;
+
+    // Keep track of the time last preview was updated
+    let lastUpdatedTime = 0, currentTime;
+    // Mostly copied from tabbrowser.xml swapBrowsersAndCloseOther
+    let {selectedTab} = gBrowser;
+    let selectedBrowser = selectedTab.linkedBrowser;
+    selectedBrowser.stop();
+
+    // Unhook our progress listener
+    let selectedIndex = selectedTab._tPos;
+    const filter = gBrowser.mTabFilters[selectedIndex];
+    let tabListener = gBrowser.mTabListeners[selectedIndex];
+    selectedBrowser.webProgress.removeProgressListener(filter);
+    filter.removeProgressListener(tabListener);
+    let tabListenerBlank = tabListener.mBlank;
+
+    let openPage = gBrowser._placesAutocomplete;
+    // Restore current registered open URI.
+    if (selectedBrowser.registeredOpenURI) {
+      openPage.unregisterOpenPage(selectedBrowser.registeredOpenURI);
+      delete selectedBrowser.registeredOpenURI;
+    }
+    openPage.registerOpenPage(preview.currentURI);
+    selectedBrowser.registeredOpenURI = preview.currentURI;
+
+    // Save the last history entry from the preview if it has loaded
+    let history = preview.sessionHistory.QueryInterface(Ci.nsISHistoryInternal);
+    let entry;
+    if (history.count > 0) {
+      entry = history.getEntryAtIndex(history.index, false);
+      history.PurgeHistory(history.count);
+    }
+
+    // Copy over the history from the current tab if it's not empty
+    let origHistory = selectedBrowser.sessionHistory;
+    for (let i = 0; i <= origHistory.index; i++) {
+      let origEntry = origHistory.getEntryAtIndex(i, false);
+      if (origEntry.URI.spec != "about:blank")
+        history.addEntry(origEntry, true);
+    }
+
+    // Add the last entry from the preview; in-progress preview will add itself
+    if (entry != null)
+      history.addEntry(entry, true);
+
+    // Swap the docshells then fix up various properties
+    selectedBrowser.swapDocShells(preview);
+    selectedBrowser.attachFormFill();
+    gBrowser.setTabTitle(selectedTab);
+    gBrowser.updateCurrentBrowser(true);
+    gBrowser.useDefaultIcon(selectedTab);
+    gURLBar.value = (selectedBrowser.currentURI.spec != "about:blank") ?
+        selectedBrowser.currentURI.spec : preview.getAttribute("src");
+
+    // Restore the progress listener
+    tabListener = gBrowser.mTabProgressListener(selectedTab, selectedBrowser, tabListenerBlank);
+    gBrowser.mTabListeners[selectedIndex] = tabListener;
+    filter.addProgressListener(tabListener, Ci.nsIWebProgress.NOTIFY_ALL);
+    selectedBrowser.webProgress.addProgressListener(filter, Ci.nsIWebProgress.NOTIFY_ALL);
+
+    // Move focus out of the preview to the tab's gBrowser before removing it
+    preview.blur();
+    selectedBrowser.focus();
+    removePreview();
+  }
+
+  // Provide callbacks to stop checking the popup
+  let stop = false;
+  function stopIt() stop = true;
+  unload(function() {
+    stopIt();
+    removePreview();
+  }, window);
+
+  // Keep checking if the popup has something to preview
+  listen(window, popup, "popuphidden", stopIt);
+  listen(window, popup, "popupshown", function() {
+    // Only recursively go again for a repeating check if not stopping
+    if (stop) {
+      stop = false;
+      return;
+    }
+    (Utils.delay || Utils.namedTimer)(
+        arguments.callee, 100, window, 'preview-popup-shown');
+
+    // Short circuit if there's no suggestions but don't remove the preview
+    if (!gURLBar.popupOpen)
+      return;
+
+    // Make sure we have either a domain suggested or a search suggestion
+    if (!isURI(gURLBar.value) && !searchSuggestionDisplayed) {
+      removePreview();
+      return;
+    }
+
+    // Only auto-load some types of uris
+    let url = "";
+    if (!searchSuggestionDisplayed) {
+      url = gURLBar.value;
+      if (url.search('://') == -1) {
+        url = "http://" + url;
+      }
+      if (url.search(/^(data|ftp|https?):/) == -1 || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1) {
+        removePreview();
+        return;
+      }
+    }
+    else {
+      // Check for frequency of preview displayed
+      currentTime = new Date();
+      if (currentTime.getTime() - lastUpdatedTime < 500)
+        return;
+      else
+        lastUpdatedTime = currentTime.getTime();
+      url = convertToSearchURL(gURLBar.value)
+    }
+
+    // Create the preview if it's missing
+    if (preview == null) {
+      preview = window.document.createElement("browser");
+      preview.setAttribute("type", "content");
+
+      // Copy some inherit properties of normal tabbrowsers
+      preview.setAttribute("autocompletepopup", gBrowser.getAttribute("autocompletepopup"));
+      preview.setAttribute("contextmenu", gBrowser.getAttribute("contentcontextmenu"));
+      preview.setAttribute("tooltip", gBrowser.getAttribute("contenttooltip"));
+
+      // Make the preview sit on top of the page
+      preview.style.background = "rgba(200, 200, 200, .9)";
+      preview.style.opacity = .75;
+
+      // Prevent title changes from showing during a preview
+      preview.addEventListener("DOMTitleChanged", function(e) e.stopPropagation(), true);
+
+      // The user clicking or tabbinb to the content should indicate persist
+      preview.addEventListener("focus", persistPreview, true);
+    }
+
+    // Move the preview to the current tab if switched
+    let selectedStack = gBrowser.selectedBrowser.parentNode;
+    if (selectedStack != preview.parentNode)
+      selectedStack.appendChild(preview);
+
+    // Load the url if new
+    if (preview.getAttribute("src") != url)
+      preview.setAttribute("src", url);
+  });
+
+  // Make the preview permanent on enter
+  listen(window, gURLBar, "keypress", function(event) {
+    switch (event.keyCode) {
+      case event.DOM_VK_ENTER:
+      case event.DOM_VK_RETURN:
+        // Only use the preview if there aren't special key combinations
+        if (event.shiftKey || event.ctrlKey || event.metaKey)
+          removePreview();
+        else
+          persistPreview();
+        break;
+
+      // Remove the preview on cancel or edits
+      case event.DOM_VK_CANCEL:
+      case event.DOM_VK_ESCAPE:
+      case event.DOM_VK_BACK_SPACE:
+      case event.DOM_VK_DELETE:
+      case event.DOM_VK_END:
+      case event.DOM_VK_HOME:
+      case event.DOM_VK_LEFT:
+      case event.DOM_VK_RIGHT:
+        removePreview();
+        break;
+    }
+  });
+
+  // Clicking a result will save the preview
+  listen(window, popup, "click", persistPreview);
+}
+
 // Handle the add-on being activated on install/enable 
 function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   // Load various javascript includes for helper functions
@@ -889,6 +1093,8 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
 
   // Create a one time blob file
   watchWindows(createWorker);
+  // Add instant preview facility
+  watchWindows(addPreviews);
 });
 
 function shutdown(data, reason) {
