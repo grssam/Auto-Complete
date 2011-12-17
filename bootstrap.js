@@ -617,7 +617,7 @@ function addAutoCompleteSearch(window) {
           searchSuggestionDisplayed = false;
         }
       }, (searchSuggestionDisplayed && !hasDeleted)?10:
-          (searchSuggestionDisplayed?350:250));
+          (searchSuggestionDisplayed?350:500));
     },
 
     stopSearch: function() {},
@@ -863,14 +863,17 @@ function createWorker(window) {
 
 // Fucntion to add a preview for domains and searches
 function addPreviews(window) {
-  let {gURLBar, gBrowser} = window;
-  let popup = gURLBar.popup;
+  let urlBar = window.gURLBar;
+  let browser = window.gBrowser;
+  let popup = urlBar.popup;
   let richBox = popup.richlistbox;
+  // Keep track of the time last preview was updated
+  let lastUpdatedTime = 0, currentTime;
 
   // Shorten the results so that previews are visible
-  let origRows = gURLBar.getAttribute("maxrows");
-  gURLBar.setAttribute("maxrows", 3);
-  unload(function() gURLBar.setAttribute("maxrows", origRows), window);
+  let origRows = urlBar.getAttribute("maxrows");
+  urlBar.setAttribute("maxrows", 3);
+  unload(function() urlBar.setAttribute("maxrows", origRows), window);
 
   let preview;
   // Provide a way to get rid of the preview from the current tab
@@ -886,22 +889,20 @@ function addPreviews(window) {
     if (preview == null)
       return;
 
-    // Keep track of the time last preview was updated
-    let lastUpdatedTime = 0, currentTime;
     // Mostly copied from tabbrowser.xml swapBrowsersAndCloseOther
-    let {selectedTab} = gBrowser;
+    let selectedTab = browser.selectedTab;
     let selectedBrowser = selectedTab.linkedBrowser;
     selectedBrowser.stop();
 
     // Unhook our progress listener
     let selectedIndex = selectedTab._tPos;
-    const filter = gBrowser.mTabFilters[selectedIndex];
-    let tabListener = gBrowser.mTabListeners[selectedIndex];
+    const filter = browser.mTabFilters[selectedIndex];
+    let tabListener = browser.mTabListeners[selectedIndex];
     selectedBrowser.webProgress.removeProgressListener(filter);
     filter.removeProgressListener(tabListener);
     let tabListenerBlank = tabListener.mBlank;
 
-    let openPage = gBrowser._placesAutocomplete;
+    let openPage = browser._placesAutocomplete;
     // Restore current registered open URI.
     if (selectedBrowser.registeredOpenURI) {
       openPage.unregisterOpenPage(selectedBrowser.registeredOpenURI);
@@ -933,19 +934,19 @@ function addPreviews(window) {
     // Swap the docshells then fix up various properties
     selectedBrowser.swapDocShells(preview);
     selectedBrowser.attachFormFill();
-    gBrowser.setTabTitle(selectedTab);
-    gBrowser.updateCurrentBrowser(true);
-    gBrowser.useDefaultIcon(selectedTab);
-    gURLBar.value = (selectedBrowser.currentURI.spec != "about:blank") ?
+    browser.setTabTitle(selectedTab);
+    browser.updateCurrentBrowser(true);
+    browser.useDefaultIcon(selectedTab);
+    urlBar.value = (selectedBrowser.currentURI.spec != "about:blank") ?
         selectedBrowser.currentURI.spec : preview.getAttribute("src");
 
     // Restore the progress listener
-    tabListener = gBrowser.mTabProgressListener(selectedTab, selectedBrowser, tabListenerBlank);
-    gBrowser.mTabListeners[selectedIndex] = tabListener;
+    tabListener = browser.mTabProgressListener(selectedTab, selectedBrowser, tabListenerBlank);
+    browser.mTabListeners[selectedIndex] = tabListener;
     filter.addProgressListener(tabListener, Ci.nsIWebProgress.NOTIFY_ALL);
     selectedBrowser.webProgress.addProgressListener(filter, Ci.nsIWebProgress.NOTIFY_ALL);
 
-    // Move focus out of the preview to the tab's gBrowser before removing it
+    // Move focus out of the preview to the tab's browser before removing it
     preview.blur();
     selectedBrowser.focus();
     removePreview();
@@ -971,11 +972,17 @@ function addPreviews(window) {
         arguments.callee, 100, window, 'preview-popup-shown');
 
     // Short circuit if there's no suggestions but don't remove the preview
-    if (!gURLBar.popupOpen)
+    if (!urlBar.popupOpen)
       return;
 
+    // Make sure nothing is selected if not suggesting search
+    if (popup.selectedIndex > -1 && !searchSuggestionDisplayed) {
+      removePreview();
+      return;
+    }
+
     // Make sure we have either a domain suggested or a search suggestion
-    if (!isURI(gURLBar.value) && !searchSuggestionDisplayed) {
+    if (!isURI(urlBar.value) && !searchSuggestionDisplayed) {
       removePreview();
       return;
     }
@@ -983,7 +990,7 @@ function addPreviews(window) {
     // Only auto-load some types of uris
     let url = "";
     if (!searchSuggestionDisplayed) {
-      url = gURLBar.value;
+      url = urlBar.value;
       if (url.search('://') == -1) {
         url = "http://" + url;
       }
@@ -999,7 +1006,7 @@ function addPreviews(window) {
         return;
       else
         lastUpdatedTime = currentTime.getTime();
-      url = convertToSearchURL(gURLBar.value)
+      url = convertToSearchURL(urlBar.value);
     }
 
     // Create the preview if it's missing
@@ -1008,9 +1015,9 @@ function addPreviews(window) {
       preview.setAttribute("type", "content");
 
       // Copy some inherit properties of normal tabbrowsers
-      preview.setAttribute("autocompletepopup", gBrowser.getAttribute("autocompletepopup"));
-      preview.setAttribute("contextmenu", gBrowser.getAttribute("contentcontextmenu"));
-      preview.setAttribute("tooltip", gBrowser.getAttribute("contenttooltip"));
+      preview.setAttribute("autocompletepopup", browser.getAttribute("autocompletepopup"));
+      preview.setAttribute("contextmenu", browser.getAttribute("contentcontextmenu"));
+      preview.setAttribute("tooltip", browser.getAttribute("contenttooltip"));
 
       // Make the preview sit on top of the page
       preview.style.background = "rgba(200, 200, 200, .9)";
@@ -1024,7 +1031,7 @@ function addPreviews(window) {
     }
 
     // Move the preview to the current tab if switched
-    let selectedStack = gBrowser.selectedBrowser.parentNode;
+    let selectedStack = browser.selectedBrowser.parentNode;
     if (selectedStack != preview.parentNode)
       selectedStack.appendChild(preview);
 
@@ -1034,7 +1041,7 @@ function addPreviews(window) {
   });
 
   // Make the preview permanent on enter
-  listen(window, gURLBar, "keypress", function(event) {
+  listen(window, urlBar, "keypress", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_ENTER:
       case event.DOM_VK_RETURN:
@@ -1054,6 +1061,8 @@ function addPreviews(window) {
       case event.DOM_VK_HOME:
       case event.DOM_VK_LEFT:
       case event.DOM_VK_RIGHT:
+      case event.DOM_VK_UP:
+      case event.DOM_VK_DOWN:
         removePreview();
         break;
     }
