@@ -811,7 +811,6 @@ function populateKeywords(window) {
       args: [iterate]
     });
   }
-
 }
 
 function createWorker(window) {
@@ -973,6 +972,10 @@ function addPreviews(window) {
 
     // Short circuit if there's no suggestions but don't remove the preview
     if (!urlBar.popupOpen)
+      return;
+
+    // Return if urlBar displaying current page url
+    if (gBrowser.selectedBrowser.currentURI.spec == urlBar.value)
       return;
 
     // Make sure nothing is selected if not suggesting search
