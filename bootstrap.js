@@ -975,7 +975,7 @@ function addPreviews(window) {
       return;
 
     // Return if urlBar displaying current page url
-    if (gBrowser.selectedBrowser.currentURI.spec == urlBar.value)
+    if (browser.selectedBrowser.currentURI.spec == urlBar.value)
       return;
 
     // Make sure nothing is selected if not suggesting search
