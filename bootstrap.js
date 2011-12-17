@@ -88,10 +88,10 @@ function getKeyword(query,window) {
   else if (query == "" && before != "") {
     // get a local reference to ordered keywords and select the matching set
     ordered_Keywords = orderedKeywords;
+    beforeParts = before.split(" ").filter(function(part) {
+      return part.length > 0;
+    });
     ordered_Keywords.some(function(parts) {
-      beforeParts = before.split(" ").filter(function(part) {
-        return part.length > 0;
-      });
       let divider = parts.indexOf(beforeParts.slice(-1)[0]);
       if (divider != -1) {
         orderedSuggestions = parts.slice(divider);
@@ -135,22 +135,26 @@ function getKeyword(query,window) {
   else
     currentQuery = origQuery;
 
-  // Empty the ordered suggestions
-  orderedSuggestions.length = 0;
   if (before != "") {
     // get a local reference to ordered keywords and select the matching set
     ordered_Keywords = orderedKeywords;
-    ordered_Keywords.some(function(parts) {
-      beforeParts = before.split(" ").filter(function(part) {
-        return part.length > 0;
-      });
-      let divider = parts.indexOf(beforeParts.slice(-1)[0]);
-      if (divider != -1) {
-        orderedSuggestions = parts.slice(divider);
-        return true;
-      }
+    beforeParts = before.split(" ").filter(function(part) {
+      return part.length > 0;
     });
+    if (orderedSuggestions[0] != beforeParts.slice(-1)[0]) {
+      orderedSuggestions.length = 0;
+      ordered_Keywords.some(function(parts) {
+        let divider = parts.indexOf(beforeParts.slice(-1)[0]);
+        if (divider != -1) {
+          orderedSuggestions = parts.slice(divider);
+          return true;
+        }
+      });
+    }
   }
+  else
+    // Empty the ordered suggestions
+    orderedSuggestions.length = 0;
 
   // Get a local keywords reference and ignore domains for multi-word
   let keywords = orderedSuggestions.concat(sortedKeywords);
@@ -312,7 +316,7 @@ function addEnterSelects(window) {
       if (popup.noResults)
         return;
 
-      // Unless we just completed a domain, don't auto-select if we have a url
+      // Don't auto-select if we have a url
       if (gURLBar.willHandle)
         return;
 
@@ -460,7 +464,7 @@ function addEnterSelects(window) {
     gURLBar.value = valueB4Enter;
   });
   listen(window, gURLBar, "focus", function(event) {
-    valueB4Enter = gURLBar.value;
+    valueB4Enter = gBrowser.selectedBrowser.currentURI.spec;
   });
 }
 
@@ -506,7 +510,6 @@ function addSearchSuggestion(window) {
       return orig.call(this, event);
     };
   });
-
 
   // Provide a way to set the autocomplete search engines and initialize
   function setSearch(engines) {
@@ -612,7 +615,7 @@ function addAutoCompleteSearch(window) {
           searchSuggestionDisplayed = false;
         }
       }, (searchSuggestionDisplayed && !hasDeleted)?10:
-          (searchSuggestionDisplayed?350:150));
+          (searchSuggestionDisplayed?350:250));
     },
 
     stopSearch: function() {},
