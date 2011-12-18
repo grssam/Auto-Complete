@@ -270,8 +270,8 @@ function addEnterSelects(window) {
   let {async} = makeWindowHelpers(window);
 
   // Add some helper functions to various objects
-  let gURLBar = window.gURLBar;
-  let popup = gURLBar.popup;
+  let {gURLBar} = window;
+  let {popup} = gURLBar;
   popup.__defineGetter__("noResults", function() {
     return this._matchCount == 0;
   });
@@ -466,7 +466,7 @@ function addEnterSelects(window) {
     gURLBar.value = valueB4Enter;
   });
   listen(window, gURLBar, "focus", function(event) {
-    valueB4Enter = gBrowser.selectedBrowser.currentURI.spec;
+    valueB4Enter = window.gBrowser.selectedBrowser.currentURI.spec;
   });
 }
 
@@ -975,7 +975,8 @@ function addPreviews(window) {
       return;
 
     // Return if urlBar displaying current page url
-    if (browser.selectedBrowser.currentURI.spec == urlBar.value)
+    if (browser.selectedBrowser.currentURI.spec.replace(/^(https?:\/\/)/,"")
+      .replace(/(\/?$)/,"") == urlBar.value.replace(/^(https?:\/\/)/,"").replace(/(\/?$)/,""))
       return;
 
     // Make sure nothing is selected if not suggesting search
