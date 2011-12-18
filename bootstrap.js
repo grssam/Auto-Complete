@@ -879,6 +879,7 @@ function addPreviews(window) {
   function removePreview() {
     if (preview != null) {
       preview.parentNode.removeChild(preview);
+      browser.selectedTab.linkedBrowser.style.opacity = 1;
       preview = null;
     }
   }
@@ -1024,8 +1025,10 @@ function addPreviews(window) {
       preview.setAttribute("tooltip", browser.getAttribute("contenttooltip"));
 
       // Make the preview sit on top of the page
-      preview.style.background = "rgba(200, 200, 200, .9)";
-      preview.style.opacity = .75;
+      preview.style.background = "rgba(200, 200, 200, 0.9)";
+      preview.style.opacity = 0.9;
+      // Making the page behind the preview as white.
+      browser.selectedTab.linkedBrowser.style.opacity = 0.25;
 
       // Prevent title changes from showing during a preview
       preview.addEventListener("DOMTitleChanged", function(e) e.stopPropagation(), true);
@@ -1045,12 +1048,12 @@ function addPreviews(window) {
   });
 
   // Make the preview permanent on enter
-  listen(window, urlBar, "keypress", function(event) {
+  listen(window, urlBar, "keydown", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_ENTER:
       case event.DOM_VK_RETURN:
         // Only use the preview if there aren't special key combinations
-        if (event.shiftKey || event.ctrlKey || event.metaKey)
+        if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
           removePreview();
         else
           persistPreview();
