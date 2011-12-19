@@ -463,10 +463,7 @@ function addEnterSelects(window) {
 
   // Handle the gURLBar value upon entering and leaving
   listen(window, gURLBar, "blur", function(event) {
-    gURLBar.value = valueB4Enter;
-  });
-  listen(window, gURLBar, "focus", function(event) {
-    valueB4Enter = window.gBrowser.selectedBrowser.currentURI.spec;
+    gURLBar.value = window.gBrowser.selectedBrowser.currentURI.spec;
   });
 }
 
@@ -937,8 +934,7 @@ function addPreviews(window) {
     browser.setTabTitle(selectedTab);
     browser.updateCurrentBrowser(true);
     browser.useDefaultIcon(selectedTab);
-    urlBar.value = (selectedBrowser.currentURI.spec != "about:blank") ?
-        selectedBrowser.currentURI.spec : preview.getAttribute("src");
+    urlBar.value = selectedBrowser.currentURI.spec;
 
     // Restore the progress listener
     tabListener = browser.mTabProgressListener(selectedTab, selectedBrowser, tabListenerBlank);
@@ -1089,6 +1085,25 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
 
   Cu.import("resource://services-sync/util.js");
 
+  function initiateFunctions() {
+    // Add suggestions to all windows
+    watchWindows(addKeywordSuggestions);
+    // Add enter-selects functionality to all windows
+    watchWindows(addEnterSelects);
+    // Add functionality to do search based on current engine
+    // via address bar if no result matches
+    if (pref("showSearchSuggestion")) {
+      watchWindows(addSearchSuggestion);
+      watchWindows(addAutoCompleteSearch);
+    }
+
+    // Create a one time blob file
+    watchWindows(createWorker);
+    // Add instant preview facility if pref'd on
+    if (pref("showInstantPreview"))
+      watchWindows(addPreviews);
+  }
+
   // Watch for preference changes to reprocess the keyword data
   pref.observe([
     "showBookmarks",
@@ -1096,21 +1111,28 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     "showSearchKeywords",
   ], function() populateKeywords());
 
-  // Add suggestions to all windows
-  watchWindows(addKeywordSuggestions);
-  // Add enter-selects functionality to all windows
-  watchWindows(addEnterSelects);
-  // Add functionality to do search based on current engine
-  // via address bar if no result matches
-  if (pref("showSearchSuggestion")) {
-    watchWindows(addSearchSuggestion);
-    watchWindows(addAutoCompleteSearch);
+  pref.observe([
+    "showSearchSuggestion",
+    "showInstantPreview",
+  ], reload);
+
+  function reload() {
+    unload();
+    pref.observe([
+      "showBookmarks",
+      "showDomains",
+      "showSearchKeywords",
+    ], function() populateKeywords());
+
+    pref.observe([
+      "showSearchSuggestion",
+      "showInstantPreview",
+    ], reload);
+
+    initiateFunctions();
   }
 
-  // Create a one time blob file
-  watchWindows(createWorker);
-  // Add instant preview facility
-  watchWindows(addPreviews);
+  initiateFunctions();
 });
 
 function shutdown(data, reason) {

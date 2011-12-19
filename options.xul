@@ -35,6 +35,10 @@
       when there is no result available in the Awesomebar Popup.
   </setting>
 
+  <setting pref="extensions.AutoComplete.showInstantPreview"
+    title="Instantly Preview domains and search results"
+    type="bool"/>
+
   <setting pref="extensions.AutoComplete.showDomains"
     title="Suggest domains (e.g., mozilla.com) as keywords"
     type="bool"/>

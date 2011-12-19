@@ -45,7 +45,8 @@ pref.defaults = {
   showBookmarks: true,
   showDomains: true,
   showSearchKeywords: true,
-  showSearchSuggestion: true
+  showSearchSuggestion: true,
+  showInstantPreview: true
 };
 
 pref.observe = function(prefs, callback) {
