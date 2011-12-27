@@ -50,6 +50,8 @@ let orderedSuggestions = [];
 let sortedKeywords = [];
 // Keep an ordered list of keywords to suggest
 let orderedKeywords = [];
+// Keep track of bookmarks Keywords list for better search suggestion
+let bookmarksKeywords = [];
 
 // Keep track of search suggestion and the current search engine
 let searchSuggestionDisplayed = false;
@@ -472,20 +474,28 @@ let convertToSearchURL = function() {};
 
 // Checks if the current input is already a uri
 function isURI(input) {
-  try {
-    // Quit early if the input is already a URI
-    return Services.io.newURI(input, null, null);
-  }
-  catch(ex) {}
+  if (input.match(/ /) == null) {
+    try {
+      // Quit early if the input is already a URI
+      return Services.io.newURI(input, null, null);
+    }
+    catch(ex) {}
 
-  try {
-    // Quit early if the input is domain-like (e.g., site.com/page)
-    return Cc["@mozilla.org/network/effective-tld-service;1"].
-      getService(Ci.nsIEffectiveTLDService).
-      getBaseDomainFromHost(input);
+    try {
+      // Quit early if the input is domain-like (e.g., site.com/page)
+      return Cc["@mozilla.org/network/effective-tld-service;1"].
+        getService(Ci.nsIEffectiveTLDService).
+        getBaseDomainFromHost(input);
+    }
+    catch(ex) {}
   }
-  catch(ex) {}
-  return false;
+
+  let keyword = input.split(/\s+/)[0];
+  // Check if the first word matches a bookmark keyword
+  if (bookmarksKeywords.indexOf(keyword) != -1)
+    return keyword;
+// Check if there's an search engine registered for the first keyword
+  return Services.search.getEngineByAlias(keyword);
 }
 
 // Function to searching facility if no match found
@@ -496,15 +506,15 @@ function addSearchSuggestion(window) {
 
   // Convert the query into search engine specific url
   function getSearchURL(input) {
-    return isURI(input) != false?input : convertToSearchURL(input);
+    return isURI(input) != null?input : convertToSearchURL(input);
   }
 
   // Convert inputs to search urls
   change(gURLBar, "_canonizeURL", function(orig) {
     return function(event) {
       if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
-        if (((popup._matchCount == 1 && searchSuggestionDisplayed)
-          || popup._matchCount == 0) && gURLBar.value.length > 0 && pref("showSearchSuggestion"))
+        if ((searchSuggestionDisplayed || popup._matchCount == 0)
+          && gURLBar.value.length > 0 && pref("showSearchSuggestion"))
             this.value = getSearchURL(this.value);
       return orig.call(this, event);
     };
@@ -525,13 +535,11 @@ function addSearchSuggestion(window) {
 
 // Add an autocomplete search engine to provide location bar suggestions
 function addAutoCompleteSearch(window) {
-  let seachEngineService = Components.classes["@mozilla.org/browser/search-service;1"]
-    .getService(Components.interfaces.nsIBrowserSearchService);
   // Getting the current search engine
-  let currentSearchEngine = seachEngineService.currentEngine;
+  let currentSearchEngine = Services.search.currentEngine;
   // If no current search engine , then using the first one
   if (currentSearchEngine == null)
-    currentSearchEngine = seachEngineService.getEngines()[0];
+    currentSearchEngine = Services.search.getEngines()[0];
 
   // Updating the convertToSearchURL function
   convertToSearchURL = function (query) {
@@ -546,10 +554,15 @@ function addAutoCompleteSearch(window) {
   let {popup} = gURLBar;
   let {async} = makeWindowHelpers(window);
 
+  let origMaxResults = popup._maxResults;
+  unload(function() {
+    window.gURLBar.popup._maxResults = origMaxResults;
+  }, window);
+
   function searchValid(query) {
-    return ((popup._matchCount == 1 && searchSuggestionDisplayed)
+    return ((popup._matchCount == 1 && searchSuggestionDisplayed && !hasMoved)
       || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
-      && gURLBar.value.length > 0 && isURI(query) == false
+      && gURLBar.value.length > 0 && isURI(query) == null
       && pref("showSearchSuggestion");
   }
 
@@ -578,6 +591,11 @@ function addAutoCompleteSearch(window) {
     }
   });
 
+  // Resetting the max results on blurring out of urlBar
+  listen(window, gURLBar, "blur", function() {
+    window.gURLBar.popup._maxResults = origMaxResults;
+  });
+
   // Implement the autocomplete search that handles twitter queries
   let search = {
     createInstance: function(outer, iid) search.QueryInterface(iid),
@@ -588,18 +606,25 @@ function addAutoCompleteSearch(window) {
     startSearch: function(query, param, previous, listener) {
       async(function() {
         // Quit early if query is same as previous one
-        if (gURLBar.value == previous)
-          return;
+        //if (gURLBar.value == previous)
+          //return;
 
         // Only display Google Search option when no results
         if (searchValid(gURLBar.value)) {
-          let label = "Search " + engineName + " for " + gURLBar.value;
           searchSuggestionDisplayed = true;
+
+          popup._maxResults = 1;
+          // Automatically reset the maxresults's value
+          async(function() {
+            if (!searchSuggestionDisplayed || !gURLBar.focused)
+              popup._maxResults = origMaxResults;
+          }, 500);
+
           // Call the listener immediately with one result
           listener.onSearchResult(search, {
             getCommentAt: function() engineName + " search: " + gURLBar.value,
             getImageAt: function() SEARCH_ICON,
-            getLabelAt: function() label,
+            getLabelAt: function() "Search " + engineName + " for " + gURLBar.value,
             getValueAt: function() convertToSearchURL(gURLBar.value),
             getStyleAt: function() "favicon",
             get matchCount() 1,
@@ -612,9 +637,9 @@ function addAutoCompleteSearch(window) {
         // Send a delayed NOMATCH so the autocomplete doesn't close early
         else {
           searchSuggestionDisplayed = false;
+          popup._maxResults = origMaxResults;
         }
-      }, (searchSuggestionDisplayed && !hasDeleted)?10:
-          (searchSuggestionDisplayed?350:500));
+      }, (searchSuggestionDisplayed && !hasDeleted)? 10: 400);
     },
 
     stopSearch: function() {},
@@ -710,18 +735,18 @@ function populateKeywords(window) {
       query: "SELECT * FROM moz_keywords",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({keyword}) allKeywords.push([keyword]));
+        resultArray.forEach(function({keyword}) {
+          // Only add bookmark keywords if the user wants it
+          if (pref("addBookmarkKeywords"))
+            allKeywords.push([keyword]);
+          bookmarksKeywords.push(keyword);
+        });
         addFromHistory();
       },
       args : []
     });
   }
-
-  // Only add bookmark keywords if the user wants it
-  if (pref("addBookmarkKeywords"))
-    addBookmarkKeywords();
-  else
-    addFromHistory();
+  addBookmarkKeywords();
 
   // Use input history to discover keywords from typed letters
   function addFromHistory() {
@@ -983,15 +1008,14 @@ function addPreviews(window) {
     }
 
     // Make sure we have either a domain suggested or a search suggestion
-    if (!isURI(urlBar.value) && !searchSuggestionDisplayed) {
+    if (isURI(urlBar.value) == null && !searchSuggestionDisplayed) {
       removePreview();
       return;
     }
 
     // Only auto-load some types of uris
-    let url = "";
+    let url = urlBar.value;
     if (!searchSuggestionDisplayed) {
-      url = urlBar.value;
       if (url.search('://') == -1) {
         url = "http://" + url;
       }
@@ -1007,7 +1031,7 @@ function addPreviews(window) {
         return;
       else
         lastUpdatedTime = currentTime.getTime();
-      url = convertToSearchURL(urlBar.value);
+      url = isURI(url) != null? url: convertToSearchURL(url);
     }
 
     // Create the preview if it's missing
