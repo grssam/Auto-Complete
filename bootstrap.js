@@ -740,12 +740,12 @@ function populateKeywords(window) {
       query: "SELECT * FROM moz_keywords",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({keyword}) {
+        for (let i = 0; i < resultArray.length; i++) {
           // Only add bookmark keywords if the user wants it
           if (pref("addBookmarkKeywords"))
-            allKeywords.push([keyword]);
-          bookmarksKeywords.push(keyword);
-        });
+            allKeywords.push([resultArray[i].keyword]);
+          bookmarksKeywords.push(resultArray[i].keyword);
+        }
         addFromHistory();
       },
       args : []
@@ -765,7 +765,11 @@ function populateKeywords(window) {
              "LIMIT 250",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({input, url, title}) {
+        let input, url, title;
+        for (let i = 0; i < resultArray.length; i++) {
+          input = resultArray[i].input;
+          url = resultArray[i].url;
+          title = resultArray[i].title;
           // Add keywords for word parts that start with the input word
           let word = input.trim().toLowerCase().split(/\s+/)[0];
           word = word.replace("www.", "");
@@ -788,7 +792,7 @@ function populateKeywords(window) {
           addDomain(url);
           addKeywords(tags);
           addTitleUrl(addKeywords, title, url);
-        });
+        }
         addFromBookmarks();
       },
       args: []
@@ -808,9 +812,10 @@ function populateKeywords(window) {
              "LIMIT 100",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({url, title}) {
-          addTitleUrl(function(parts) allKeywords.push(parts), title, url);
-        });
+        for (let i = 0; i < resultArray.length; i++) {
+          addTitleUrl(function(parts) allKeywords.push(parts),
+            resultArray[i].title, resultArray[i].url);
+        }
         addDomains(["AND typed = 1 ORDER BY frecency DESC", 0]);
       },
       args: []
@@ -824,10 +829,11 @@ function populateKeywords(window) {
       query: "SELECT * FROM moz_places WHERE visit_count > 1 " + extraQuery,
     }, {
       callback: function([iterate, resultArray]) {
-        resultArray.forEach(function({url,title}) {
-          addDomain(url);
-          addTitleUrl(function(parts) allKeywords.push(parts), title, url);
-        });
+        for (let i = 0; i < resultArray.length; i++) {
+          addDomain(resultArray[i].url);
+          addTitleUrl(function(parts) allKeywords.push(parts),
+            resultArray[i].title, resultArray[i].url);
+        }
         if (iterate == 0)
           addDomains(["ORDER BY visit_count DESC LIMIT 100", 1]);
         else if (iterate == 1)
@@ -844,19 +850,19 @@ function createWorker(window) {
   let bb = new window.MozBlobBuilder();
   bb.append("self.addEventListener('message', function(e) {" +
     "var sK = [],oK = [],aK = JSON.parse(e.data);" +
-    "aK.forEach(function(K) {" +
-      "var m = false;" +
+    "for (var i = 0; i < aK.length; i++) {" +
+      "var m = false, K = aK[i];" +
       "oK.some(function(orderedPart) {" +
         "K.some(function(k) {" +
           "if (orderedPart.indexOf(k) != -1) {" +
             "m = true;return true;}" +
         "}); if (m) {" +
-          "K.forEach(function (part) {" +
-            "if (orderedPart.indexOf(part) == -1)" +
-              "orderedPart.push(part.slice(0));" +
-          "});return true;}});" +
+          "for (var j = 0; j < K.length; j++) {" +
+            "if (orderedPart.indexOf(K[j]) == -1)" +
+              "orderedPart.push(K[j].slice(0));" +
+          "}return true;}});" +
       "if (!m && K.length > 0)" +
-        "oK.push(K.slice(0));});" +
+        "oK.push(K.slice(0));}" +
     "do {" +
       "aK = aK.filter(function(K) K.length > 0);" +
       "if (aK.length == 0) break;" +
