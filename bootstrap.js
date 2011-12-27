@@ -267,8 +267,7 @@ function addEnterSelects(window) {
   let autoSelectOn;
   // Keep track of last shown result's search string
   let lastSearch;
-  // Keep track of what was in gURLBar originally
-  let valueB4Enter;
+
   let {async} = makeWindowHelpers(window);
 
   // Add some helper functions to various objects
@@ -456,7 +455,7 @@ function addEnterSelects(window) {
           popup.hidePopup();
         }
         else {
-          gURLBar.value = valueB4Enter;
+          gURLBar.value = window.gBrowser.selectedBrowser.currentURI.spec;
           gURLBar.selectTextRange(0, gURLBar.value.length);
         }
         break;
@@ -499,7 +498,7 @@ function isKeyword(input) {
   // Check if the first word matches a bookmark keyword
   if (bookmarksKeywords.indexOf(keyword) != -1)
     return keyword;
-// Check if there's an search engine registered for the first keyword
+  // Check if there's an search engine registered for the first keyword
   return Services.search.getEngineByAlias(keyword);
 }
 
@@ -615,10 +614,6 @@ function addAutoCompleteSearch(window) {
     // Handle searches from the location bar
     startSearch: function(query, param, previous, listener) {
       async(function() {
-        // Quit early if query is same as previous one
-        //if (gURLBar.value == previous)
-          //return;
-
         // Only display Google Search option when no results
         if (searchValid(gURLBar.value)) {
           searchSuggestionDisplayed = true;
@@ -1026,9 +1021,8 @@ function addPreviews(window) {
     // Only auto-load some types of uris
     let url = urlBar.value;
     if (!searchSuggestionDisplayed) {
-      if (url.search('://') == -1) {
+      if (url.search('://') == -1)
         url = "http://" + url;
-      }
       if (url.search(/^(data|ftp|https?):/) == -1 || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1) {
         removePreview();
         return;
