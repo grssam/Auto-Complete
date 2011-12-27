@@ -490,6 +490,11 @@ function isURI(input) {
     catch(ex) {}
   }
 
+  return null;
+}
+
+// Checks if the current input is matching keywords
+function isKeyword(input) {
   let keyword = input.split(/\s+/)[0];
   // Check if the first word matches a bookmark keyword
   if (bookmarksKeywords.indexOf(keyword) != -1)
@@ -562,7 +567,7 @@ function addAutoCompleteSearch(window) {
   function searchValid(query) {
     return ((popup._matchCount == 1 && searchSuggestionDisplayed && !hasMoved)
       || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
-      && gURLBar.value.length > 0 && isURI(query) == null
+      && gURLBar.value.length > 0 && isURI(query) == null && isKeyword(query) == null
       && pref("showSearchSuggestion");
   }
 
@@ -591,9 +596,14 @@ function addAutoCompleteSearch(window) {
     }
   });
 
-  // Resetting the max results on blurring out of urlBar
+  // Resetting the max results and searchSuggestionDisplayed 
+  // on blurring out of urlBar and on focus
   listen(window, gURLBar, "blur", function() {
     window.gURLBar.popup._maxResults = origMaxResults;
+    searchSuggestionDisplayed = false;
+  });
+  listen(window, gURLBar, "focus", function() {
+    searchSuggestionDisplayed = false;
   });
 
   // Implement the autocomplete search that handles twitter queries
@@ -639,7 +649,7 @@ function addAutoCompleteSearch(window) {
           searchSuggestionDisplayed = false;
           popup._maxResults = origMaxResults;
         }
-      }, (searchSuggestionDisplayed && !hasDeleted)? 10: 400);
+      }, (searchSuggestionDisplayed && !hasDeleted)? 10: 500);
     },
 
     stopSearch: function() {},
