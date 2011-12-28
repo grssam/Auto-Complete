@@ -510,7 +510,7 @@ function addSearchSuggestion(window) {
 
   // Convert the query into search engine specific url
   function getSearchURL(input) {
-    return isURI(input) != null?input : convertToSearchURL(input);
+    return isURI(input) != null? input: convertToSearchURL(input);
   }
 
   // Convert inputs to search urls
@@ -623,7 +623,7 @@ function addAutoCompleteSearch(window) {
           async(function() {
             if (!searchSuggestionDisplayed || !gURLBar.focused)
               popup._maxResults = origMaxResults;
-          }, 500);
+          }, 50);
 
           // Call the listener immediately with one result
           listener.onSearchResult(search, {
@@ -659,8 +659,7 @@ function addAutoCompleteSearch(window) {
 }
 
 // Look through various places to find potential keywords
-function populateKeywords(window) {
-
+function populateKeywords() {
   // Keep a nested array of array of keywords -- 2 arrays per entry
   let allKeywords = [];
 
@@ -775,7 +774,7 @@ function populateKeywords(window) {
           word = word.replace("www.", "");
           let wordLen = word.length;
           if (wordLen == 0)
-            return;
+            continue;
 
           // Need a nsIURI for various interfaces to get tags
           let URI = Services.io.newURI(url, null, null);
@@ -868,8 +867,8 @@ function createWorker(window) {
       "if (aK.length == 0) break;" +
       "aK.map(function(K) {" +
         "var k = K.shift();" +
-        "if (sK.indexOf(k) == -1) {sK.push(k);" +
-        "}});} while (true);" +
+        "if (sK.indexOf(k) == -1) sK.push(k);" +
+        "});} while (true);" +
     "self.postMessage(JSON.stringify([oK, sK]));}, false);");
 
   // Obtain a blob URL reference to our worker 'file'.
