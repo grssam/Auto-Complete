@@ -445,11 +445,13 @@ function addEnterSelects(window) {
       case event.DOM_VK_ESCAPE:
         let input = event.originalTarget;
         let {selectionEnd, selectionStart} = input;
-        event.stopPropagation();
-        event.preventDefault();
         if ((selectionStart == 0 || selectionStart == selectionEnd)
-          && selectionEnd == gURLBar.value.length && !popup.mPopupOpen)
-            window.gBrowser.selectedBrowser.focus();
+          && selectionEnd == gURLBar.value.length && !popup.mPopupOpen) {
+            async(function() {
+              window.gBrowser.selectedBrowser.focus();
+            }, 50);
+            return;
+        }
         else if (popup.mPopupOpen) {
           popup.selectedIndex = -1;
           popup.hidePopup();
@@ -458,6 +460,8 @@ function addEnterSelects(window) {
           gURLBar.value = window.gBrowser.selectedBrowser.currentURI.spec;
           gURLBar.selectTextRange(0, gURLBar.value.length);
         }
+        event.stopPropagation();
+        event.preventDefault();
         break;
     }
   });
@@ -917,7 +921,7 @@ function addPreviews(window) {
   }
 
   // Provide a way to replace the current tab with the preview
-  function persistPreview() {
+  function persistPreview(event) {
     if (preview == null)
       return;
 
@@ -977,10 +981,16 @@ function addPreviews(window) {
     filter.addProgressListener(tabListener, Ci.nsIWebProgress.NOTIFY_ALL);
     selectedBrowser.webProgress.addProgressListener(filter, Ci.nsIWebProgress.NOTIFY_ALL);
 
+
     // Move focus out of the preview to the tab's browser before removing it
     preview.blur();
     selectedBrowser.focus();
     removePreview();
+    // work around to enable bookmarks star and identity box favicon on previewed page
+    if (event != null) {
+      window.gIdentityHandler.handleIdentityButtonEvent(event);
+      window.gIdentityHandler._identityPopup.hidePopup();
+    }
   }
 
   // Provide callbacks to stop checking the popup
@@ -1063,7 +1073,7 @@ function addPreviews(window) {
       preview.addEventListener("DOMTitleChanged", function(e) e.stopPropagation(), true);
 
       // The user clicking or tabbinb to the content should indicate persist
-      preview.addEventListener("focus", persistPreview, true);
+      preview.addEventListener("focus", function(event) persistPreview(event), true);
     }
 
     // Move the preview to the current tab if switched
@@ -1085,9 +1095,12 @@ function addPreviews(window) {
         if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
           removePreview();
         else
-          persistPreview();
+          persistPreview(event);
         break;
-
+    }
+  });
+  listen(window, urlBar, "keypress", function(event) {
+    switch (event.keyCode) {
       // Remove the preview on cancel or edits
       case event.DOM_VK_CANCEL:
       case event.DOM_VK_ESCAPE:
@@ -1105,7 +1118,7 @@ function addPreviews(window) {
   });
 
   // Clicking a result will save the preview
-  listen(window, popup, "click", persistPreview);
+  listen(window, popup, "click", function(event) persistPreview(event));
 }
 
 // Handle the add-on being activated on install/enable 
