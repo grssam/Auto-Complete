@@ -627,7 +627,7 @@ function addAutoCompleteSearch(window) {
           async(function() {
             if (!searchSuggestionDisplayed || !gURLBar.focused)
               popup._maxResults = origMaxResults;
-          }, 50);
+          }, 60);
 
           // Call the listener immediately with one result
           listener.onSearchResult(search, {
@@ -648,7 +648,7 @@ function addAutoCompleteSearch(window) {
           searchSuggestionDisplayed = false;
           popup._maxResults = origMaxResults;
         }
-      }, (searchSuggestionDisplayed && !hasDeleted)? 10: 500);
+      }, (searchSuggestionDisplayed && !hasDeleted)? 50: 500);
     },
 
     stopSearch: function() {},
