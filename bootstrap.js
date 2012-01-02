@@ -41,6 +41,7 @@ let suggestedByOrder = false;
 // Keep track of what is being queried
 let currentQuery = "";
 let suggestionIndex = 0;
+let justCopleted = false;
 
 // Keep track of suggestions based on current query/ref/params
 let suggestions = [];
@@ -50,6 +51,8 @@ let orderedSuggestions = [];
 let sortedKeywords = [];
 // Keep an ordered list of keywords to suggest
 let orderedKeywords = [];
+// Keep track of bookmarks Keywords list for better search suggestion
+let bookmarksKeywords = [];
 
 // Keep track of search suggestion and the current search engine
 let searchSuggestionDisplayed = false;
@@ -233,6 +236,7 @@ function addKeywordSuggestions(window) {
   // Watch for urlbar value input changes to suggest keywords
   listen(window, gURLBar, "input", function(event) {
     suggestionIndex = 0;
+    justCompleted = false;
 
     // Don't try suggesting a keyword when the user wants to delete
     if (deleting) {
@@ -253,6 +257,7 @@ function addKeywordSuggestions(window) {
     // Select the end of the suggestion to allow over-typing
     gURLBar.value = keyword;
     gURLBar.selectTextRange(query.length, keyword.length);
+    justCompleted = true;
 
     // Make sure the search suggestions show up
     async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
@@ -265,8 +270,7 @@ function addEnterSelects(window) {
   let autoSelectOn;
   // Keep track of last shown result's search string
   let lastSearch;
-  // Keep track of what was in gURLBar originally
-  let valueB4Enter;
+
   let {async} = makeWindowHelpers(window);
 
   // Add some helper functions to various objects
@@ -444,19 +448,23 @@ function addEnterSelects(window) {
       case event.DOM_VK_ESCAPE:
         let input = event.originalTarget;
         let {selectionEnd, selectionStart} = input;
-        event.stopPropagation();
-        event.preventDefault();
         if ((selectionStart == 0 || selectionStart == selectionEnd)
-          && selectionEnd == gURLBar.value.length && !popup.mPopupOpen)
-            window.gBrowser.selectedBrowser.focus();
+          && selectionEnd == gURLBar.value.length && !popup.mPopupOpen) {
+            async(function() {
+              window.gBrowser.selectedBrowser.focus();
+            }, 50);
+            return;
+        }
         else if (popup.mPopupOpen) {
           popup.selectedIndex = -1;
           popup.hidePopup();
         }
         else {
-          gURLBar.value = valueB4Enter;
+          gURLBar.value = window.gBrowser.selectedBrowser.currentURI.spec;
           gURLBar.selectTextRange(0, gURLBar.value.length);
         }
+        event.stopPropagation();
+        event.preventDefault();
         break;
     }
   });
@@ -472,20 +480,33 @@ let convertToSearchURL = function() {};
 
 // Checks if the current input is already a uri
 function isURI(input) {
-  try {
-    // Quit early if the input is already a URI
-    return Services.io.newURI(input, null, null);
-  }
-  catch(ex) {}
+  if (input.match(/ /) == null) {
+    try {
+      // Quit early if the input is already a URI
+      return Services.io.newURI(input, null, null);
+    }
+    catch(ex) {}
 
-  try {
-    // Quit early if the input is domain-like (e.g., site.com/page)
-    return Cc["@mozilla.org/network/effective-tld-service;1"].
-      getService(Ci.nsIEffectiveTLDService).
-      getBaseDomainFromHost(input);
+    try {
+      // Quit early if the input is domain-like (e.g., site.com/page)
+      return Cc["@mozilla.org/network/effective-tld-service;1"].
+        getService(Ci.nsIEffectiveTLDService).
+        getBaseDomainFromHost(input);
+    }
+    catch(ex) {}
   }
-  catch(ex) {}
-  return false;
+
+  return null;
+}
+
+// Checks if the current input is matching keywords
+function isKeyword(input) {
+  let keyword = input.split(/\s+/)[0];
+  // Check if the first word matches a bookmark keyword
+  if (bookmarksKeywords.indexOf(keyword) != -1)
+    return keyword;
+  // Check if there's an search engine registered for the first keyword
+  return Services.search.getEngineByAlias(keyword);
 }
 
 // Function to searching facility if no match found
@@ -496,15 +517,15 @@ function addSearchSuggestion(window) {
 
   // Convert the query into search engine specific url
   function getSearchURL(input) {
-    return isURI(input) != false?input : convertToSearchURL(input);
+    return isURI(input) != null? input: convertToSearchURL(input);
   }
 
   // Convert inputs to search urls
   change(gURLBar, "_canonizeURL", function(orig) {
     return function(event) {
       if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
-        if (((popup._matchCount == 1 && searchSuggestionDisplayed)
-          || popup._matchCount == 0) && gURLBar.value.length > 0 && pref("showSearchSuggestion"))
+        if ((searchSuggestionDisplayed || popup._matchCount == 0)
+          && gURLBar.value.length > 0 && pref("showSearchSuggestion"))
             this.value = getSearchURL(this.value);
       return orig.call(this, event);
     };
@@ -525,13 +546,11 @@ function addSearchSuggestion(window) {
 
 // Add an autocomplete search engine to provide location bar suggestions
 function addAutoCompleteSearch(window) {
-  let seachEngineService = Components.classes["@mozilla.org/browser/search-service;1"]
-    .getService(Components.interfaces.nsIBrowserSearchService);
   // Getting the current search engine
-  let currentSearchEngine = seachEngineService.currentEngine;
+  let currentSearchEngine = Services.search.currentEngine;
   // If no current search engine , then using the first one
   if (currentSearchEngine == null)
-    currentSearchEngine = seachEngineService.getEngines()[0];
+    currentSearchEngine = Services.search.getEngines()[0];
 
   // Updating the convertToSearchURL function
   convertToSearchURL = function (query) {
@@ -546,10 +565,15 @@ function addAutoCompleteSearch(window) {
   let {popup} = gURLBar;
   let {async} = makeWindowHelpers(window);
 
+  let origMaxResults = popup._maxResults;
+  unload(function() {
+    window.gURLBar.popup._maxResults = origMaxResults;
+  }, window);
+
   function searchValid(query) {
-    return ((popup._matchCount == 1 && searchSuggestionDisplayed)
+    return ((popup._matchCount == 1 && searchSuggestionDisplayed && !hasMoved)
       || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
-      && gURLBar.value.length > 0 && isURI(query) == false
+      && gURLBar.value.length > 0 && isURI(query) == null && isKeyword(query) == null
       && pref("showSearchSuggestion");
   }
 
@@ -578,6 +602,16 @@ function addAutoCompleteSearch(window) {
     }
   });
 
+  // Resetting the max results and searchSuggestionDisplayed 
+  // on blurring out of urlBar and on focus
+  listen(window, gURLBar, "blur", function() {
+    window.gURLBar.popup._maxResults = origMaxResults;
+    searchSuggestionDisplayed = false;
+  });
+  listen(window, gURLBar, "focus", function() {
+    searchSuggestionDisplayed = false;
+  });
+
   // Implement the autocomplete search that handles twitter queries
   let search = {
     createInstance: function(outer, iid) search.QueryInterface(iid),
@@ -587,19 +621,22 @@ function addAutoCompleteSearch(window) {
     // Handle searches from the location bar
     startSearch: function(query, param, previous, listener) {
       async(function() {
-        // Quit early if query is same as previous one
-        if (gURLBar.value == previous)
-          return;
-
         // Only display Google Search option when no results
         if (searchValid(gURLBar.value)) {
-          let label = "Search " + engineName + " for " + gURLBar.value;
           searchSuggestionDisplayed = true;
+
+          popup._maxResults = 1;
+          // Automatically reset the maxresults's value
+          async(function() {
+            if (!searchSuggestionDisplayed || !gURLBar.focused)
+              popup._maxResults = origMaxResults;
+          }, 60);
+
           // Call the listener immediately with one result
           listener.onSearchResult(search, {
             getCommentAt: function() engineName + " search: " + gURLBar.value,
             getImageAt: function() SEARCH_ICON,
-            getLabelAt: function() label,
+            getLabelAt: function() "Search " + engineName + " for " + gURLBar.value,
             getValueAt: function() convertToSearchURL(gURLBar.value),
             getStyleAt: function() "favicon",
             get matchCount() 1,
@@ -612,9 +649,9 @@ function addAutoCompleteSearch(window) {
         // Send a delayed NOMATCH so the autocomplete doesn't close early
         else {
           searchSuggestionDisplayed = false;
+          popup._maxResults = origMaxResults;
         }
-      }, (searchSuggestionDisplayed && !hasDeleted)?10:
-          (searchSuggestionDisplayed?350:500));
+      }, (searchSuggestionDisplayed && !hasDeleted)? 50: 500);
     },
 
     stopSearch: function() {},
@@ -629,8 +666,7 @@ function addAutoCompleteSearch(window) {
 }
 
 // Look through various places to find potential keywords
-function populateKeywords(window) {
-
+function populateKeywords() {
   // Keep a nested array of array of keywords -- 2 arrays per entry
   let allKeywords = [];
 
@@ -710,18 +746,18 @@ function populateKeywords(window) {
       query: "SELECT * FROM moz_keywords",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({keyword}) allKeywords.push([keyword]));
+        for (let i = 0; i < resultArray.length; i++) {
+          // Only add bookmark keywords if the user wants it
+          if (pref("addBookmarkKeywords"))
+            allKeywords.push([resultArray[i].keyword]);
+          bookmarksKeywords.push(resultArray[i].keyword);
+        }
         addFromHistory();
       },
       args : []
     });
   }
-
-  // Only add bookmark keywords if the user wants it
-  if (pref("addBookmarkKeywords"))
-    addBookmarkKeywords();
-  else
-    addFromHistory();
+  addBookmarkKeywords();
 
   // Use input history to discover keywords from typed letters
   function addFromHistory() {
@@ -735,13 +771,17 @@ function populateKeywords(window) {
              "LIMIT 250",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({input, url, title}) {
+        let input, url, title;
+        for (let i = 0; i < resultArray.length; i++) {
+          input = resultArray[i].input;
+          url = resultArray[i].url;
+          title = resultArray[i].title;
           // Add keywords for word parts that start with the input word
           let word = input.trim().toLowerCase().split(/\s+/)[0];
           word = word.replace("www.", "");
           let wordLen = word.length;
           if (wordLen == 0)
-            return;
+            continue;
 
           // Need a nsIURI for various interfaces to get tags
           let URI = Services.io.newURI(url, null, null);
@@ -758,7 +798,7 @@ function populateKeywords(window) {
           addDomain(url);
           addKeywords(tags);
           addTitleUrl(addKeywords, title, url);
-        });
+        }
         addFromBookmarks();
       },
       args: []
@@ -778,9 +818,10 @@ function populateKeywords(window) {
              "LIMIT 100",
     }, {
       callback: function([resultArray]) {
-        resultArray.forEach(function({url, title}) {
-          addTitleUrl(function(parts) allKeywords.push(parts), title, url);
-        });
+        for (let i = 0; i < resultArray.length; i++) {
+          addTitleUrl(function(parts) allKeywords.push(parts),
+            resultArray[i].title, resultArray[i].url);
+        }
         addDomains(["AND typed = 1 ORDER BY frecency DESC", 0]);
       },
       args: []
@@ -794,10 +835,11 @@ function populateKeywords(window) {
       query: "SELECT * FROM moz_places WHERE visit_count > 1 " + extraQuery,
     }, {
       callback: function([iterate, resultArray]) {
-        resultArray.forEach(function({url,title}) {
-          addDomain(url);
-          addTitleUrl(function(parts) allKeywords.push(parts), title, url);
-        });
+        for (let i = 0; i < resultArray.length; i++) {
+          addDomain(resultArray[i].url);
+          addTitleUrl(function(parts) allKeywords.push(parts),
+            resultArray[i].title, resultArray[i].url);
+        }
         if (iterate == 0)
           addDomains(["ORDER BY visit_count DESC LIMIT 100", 1]);
         else if (iterate == 1)
@@ -814,26 +856,26 @@ function createWorker(window) {
   let bb = new window.MozBlobBuilder();
   bb.append("self.addEventListener('message', function(e) {" +
     "var sK = [],oK = [],aK = JSON.parse(e.data);" +
-    "aK.forEach(function(K) {" +
-      "var m = false;" +
+    "for (var i = 0; i < aK.length; i++) {" +
+      "var m = false, K = aK[i];" +
       "oK.some(function(orderedPart) {" +
         "K.some(function(k) {" +
           "if (orderedPart.indexOf(k) != -1) {" +
             "m = true;return true;}" +
         "}); if (m) {" +
-          "K.forEach(function (part) {" +
-            "if (orderedPart.indexOf(part) == -1)" +
-              "orderedPart.push(part.slice(0));" +
-          "});return true;}});" +
+          "for (var j = 0; j < K.length; j++) {" +
+            "if (orderedPart.indexOf(K[j]) == -1)" +
+              "orderedPart.push(K[j].slice(0));" +
+          "}return true;}});" +
       "if (!m && K.length > 0)" +
-        "oK.push(K.slice(0));});" +
+        "oK.push(K.slice(0));}" +
     "do {" +
       "aK = aK.filter(function(K) K.length > 0);" +
       "if (aK.length == 0) break;" +
       "aK.map(function(K) {" +
         "var k = K.shift();" +
-        "if (sK.indexOf(k) == -1) {sK.push(k);" +
-        "}});} while (true);" +
+        "if (sK.indexOf(k) == -1) sK.push(k);" +
+        "});} while (true);" +
     "self.postMessage(JSON.stringify([oK, sK]));}, false);");
 
   // Obtain a blob URL reference to our worker 'file'.
@@ -882,7 +924,7 @@ function addPreviews(window) {
   }
 
   // Provide a way to replace the current tab with the preview
-  function persistPreview() {
+  function persistPreview(event) {
     if (preview == null)
       return;
 
@@ -942,10 +984,16 @@ function addPreviews(window) {
     filter.addProgressListener(tabListener, Ci.nsIWebProgress.NOTIFY_ALL);
     selectedBrowser.webProgress.addProgressListener(filter, Ci.nsIWebProgress.NOTIFY_ALL);
 
+
     // Move focus out of the preview to the tab's browser before removing it
     preview.blur();
     selectedBrowser.focus();
     removePreview();
+    // work around to enable bookmarks star and identity box favicon on previewed page
+    if (event != null) {
+      window.gIdentityHandler.handleIdentityButtonEvent(event);
+      window.gIdentityHandler._identityPopup.hidePopup();
+    }
   }
 
   // Provide callbacks to stop checking the popup
@@ -983,21 +1031,22 @@ function addPreviews(window) {
     }
 
     // Make sure we have either a domain suggested or a search suggestion
-    if (!isURI(urlBar.value) && !searchSuggestionDisplayed) {
+    if (isURI(urlBar.value) == null && !searchSuggestionDisplayed) {
       removePreview();
       return;
     }
 
     // Only auto-load some types of uris
-    let url = "";
+    let url = urlBar.value;
     if (!searchSuggestionDisplayed) {
-      url = urlBar.value;
-      if (url.search('://') == -1) {
+      if (url.search('://') == -1)
         url = "http://" + url;
-      }
-      if (url.search(/^(data|ftp|https?):/) == -1 || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1) {
-        removePreview();
-        return;
+      // Only preivew certain websites and only if they have been suggested
+      if (url.search(/^(data|ftp|https?):/) == -1 
+        || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1
+        || !justCompleted) {
+          removePreview();
+          return;
       }
     }
     else {
@@ -1007,7 +1056,7 @@ function addPreviews(window) {
         return;
       else
         lastUpdatedTime = currentTime.getTime();
-      url = convertToSearchURL(urlBar.value);
+      url = isURI(url) != null? url: convertToSearchURL(url);
     }
 
     // Create the preview if it's missing
@@ -1030,7 +1079,7 @@ function addPreviews(window) {
       preview.addEventListener("DOMTitleChanged", function(e) e.stopPropagation(), true);
 
       // The user clicking or tabbinb to the content should indicate persist
-      preview.addEventListener("focus", persistPreview, true);
+      preview.addEventListener("focus", function(event) persistPreview(event), true);
     }
 
     // Move the preview to the current tab if switched
@@ -1052,9 +1101,12 @@ function addPreviews(window) {
         if (event.shiftKey || event.ctrlKey || event.metaKey || event.altKey)
           removePreview();
         else
-          persistPreview();
+          persistPreview(event);
         break;
-
+    }
+  });
+  listen(window, urlBar, "keypress", function(event) {
+    switch (event.keyCode) {
       // Remove the preview on cancel or edits
       case event.DOM_VK_CANCEL:
       case event.DOM_VK_ESCAPE:
@@ -1072,7 +1124,7 @@ function addPreviews(window) {
   });
 
   // Clicking a result will save the preview
-  listen(window, popup, "click", persistPreview);
+  listen(window, popup, "click", function(event) persistPreview(event));
 }
 
 // Handle the add-on being activated on install/enable 
