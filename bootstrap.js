@@ -63,6 +63,24 @@ let blobURL, worker;
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query,window) {
 
+  let beforeParts,afterIndex,ordered_Keywords;
+  function getAfter() {
+    beforeParts = before.split(" ").filter(function(part) {
+      return part.length > 0;
+    });
+    afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
+    // Check if that word is already displayed
+    while (beforeParts.indexOf(orderedSuggestions[afterIndex]) != -1
+      && afterIndex < orderedSuggestions.length)
+        afterIndex++;
+    // Return if we don't have anything relevant to suggest
+    if (afterIndex >= orderedSuggestions.length)
+      return;
+    // Now that we have a word to display
+    suggestedByOrder = true;
+    return orderedSuggestions[afterIndex];
+  }
+
   suggestedByOrder = false;
   // Remember the original query to preserve its original casing
   let origQuery = query;
@@ -74,22 +92,10 @@ function getKeyword(query,window) {
   // Suggest keywords for the last word of the query
   query = query.slice(lastStart).toLowerCase();
 
-  let beforeParts,afterIndex,ordered_Keywords;
   // Suggest the next word from ordered keywords if possible
-  if (query == "" && before != "" && orderedSuggestions.length > 1) {
-    beforeParts = before.split(" ").filter(function(part) {
-      return part.length > 0;
-    });
-    afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
-    // Return if we don't have anything relevant to suggest
-    if (afterIndex >= orderedSuggestions.length)
-      return;
-    // Now that we have a word to display
-    let after = orderedSuggestions[afterIndex];
-    suggestedByOrder = true;
-    return origQuery + (before + after).slice(origQuery.length);
-  }
-  // Don't suggest a keyword when not possible
+  if (query == "" && before != "" && orderedSuggestions.length > 1)
+    return origQuery + (before + getAfter()).slice(origQuery.length);
+  // Try to build up ordered keyowrd list
   else if (query == "" && before != "") {
     // get a local reference to ordered keywords and select the matching set
     ordered_Keywords = orderedKeywords;
@@ -103,22 +109,12 @@ function getKeyword(query,window) {
         return true;
       }
     });
-    if (orderedSuggestions.length > 1) {
-      beforeParts = before.split(" ").filter(function(part) {
-        return part.length > 0;
-      });
-      afterIndex = orderedSuggestions.indexOf(beforeParts.slice(-1)[0]) + 1;
-      // Return if we don't have anything relevant to suggest
-      if (afterIndex >= orderedSuggestions.length)
-        return;
-      // Now that we have a word to display
-      let after = orderedSuggestions[afterIndex];
-      suggestedByOrder = true;
-      return origQuery + (before + after).slice(origQuery.length);
-    }
+    if (orderedSuggestions.length > 1)
+      return origQuery + (before + getAfter()).slice(origQuery.length);
     else
       return;
   }
+  // Don't suggest a keyword when not possible
   else if (query == "")
     return;
 
