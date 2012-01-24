@@ -46,7 +46,8 @@ pref.defaults = {
   showDomains: true,
   showSearchKeywords: true,
   showSearchSuggestion: true,
-  showInstantPreview: true
+  showInstantPreview: true,
+  autoFillDefault: Services.prefs.getBranch("browser.urlbar.").getBoolPref("autoFill")
 };
 
 pref.observe = function(prefs, callback) {
