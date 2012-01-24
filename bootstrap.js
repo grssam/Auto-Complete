@@ -572,11 +572,13 @@ function addAutoCompleteSearch(window) {
     window.gURLBar.popup._maxResults = origMaxResults;
   }, window);
 
-  function searchValid(query) {
+  function searchValid() {
+    let {selectionStart, selectionEnd, value} = gURLBar;
     return ((popup._matchCount == 5 && searchSuggestionDisplayed && !hasMoved)
       || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
-      && gURLBar.value.length > 0 && isURI(query) == null && isKeyword(query) == null
-      && pref("showSearchSuggestion");
+      && value.length > 0 && isURI(value) == null
+      && selectionStart == selectionEnd
+      && isKeyword(value) == null && pref("showSearchSuggestion");
   }
 
   hasDeleted = false;
@@ -624,13 +626,13 @@ function addAutoCompleteSearch(window) {
     startSearch: function(query, param, previous, listener) {
       async(function() {
         // Only display Google Search option when no results
-        if (searchValid(gURLBar.value)) {
+        if (searchValid()) {
           searchSuggestionDisplayed = true;
           // Call the listener immediately with suggested results
           let xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
             .createInstance(Ci.nsIXMLHttpRequest);
           xmlQuery.onload = function() {
-            if (!searchValid(gURLBar.value)) {
+            if (!searchValid()) {
               searchSuggestionDisplayed = false;
               popup._maxResults = origMaxResults;
               return;
@@ -656,12 +658,19 @@ function addAutoCompleteSearch(window) {
                 if (i == 0 && results[i].slice(0, gURLBar.value.length).toLowerCase()
                   != gURLBar.value.toLowerCase())
                     return "Did you mean " + results[i];
+                else if (i == 0) {
+                  let ({length} = gURLBar.value) {
+                    gURLBar.value = results[0];
+                    gURLBar.selectTextRange(length, results[0].length);
+                  }
+                  return engineName + " search: " + results[i];
+                }
                 else
                   return engineName + " search: " + results[i];
               },
               getImageAt: function() SEARCH_ICON,
-              getLabelAt: function(i) "Search " + engineName + " for " + results[i],
-              getValueAt: function(i) isURI(results[i]) != null? results[i]: convertToSearchURL(results[i]),
+              getLabelAt: function(i) isURI(results[i]) != null? results[i]: convertToSearchURL(results[i]),
+              getValueAt: function(i) results[i],
               getStyleAt: function() "favicon",
               get matchCount() Math.min(5,xmlResult.length),
               QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
