@@ -3,11 +3,11 @@
        xmlns:r="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
   <r:Description about="urn:mozilla:install-manifest">
     <creator>Girish Sharma</creator>
-    <description>Autocompletes the word being typed in the Location Bar</description>
+    <description>Autocompletes the word being typed in the Location Bar using User History as well as Google Suggest.</description>
     <homepageURL>https://addons.mozilla.org/en-US/firefox/addon/auto-complete/</homepageURL>
     <id>AutoComplete@girishsharma</id>
     <name>Auto Complete</name>
-    <version>1.2</version>
+    <version>2.0</version>
     <bootstrap>true</bootstrap>
     <type>2</type>
     <optionsType>2</optionsType>
