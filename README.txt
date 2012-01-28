@@ -1,1 +1,2 @@
-This is the source code for my initial implimentation of Predictive and Asynchronous form of SpeakWords.
+This is the source code for Version 2.0 of the Add-on Auto Complete.
+Find it on https://addons.mozilla.org/en-US/firefox/addon/auto-complete/
