@@ -945,13 +945,7 @@ function populateKeywords() {
   }
 }
 
-function createWorker(window) {
-  if (worker != null) {
-    // Returning after populate keyword call as worker already present
-    populateKeywords();
-    return;
-  }
-
+function createWorker() {
   // Creating resource reference to run the worker file
   const resourceHandler = Services.io.getProtocolHandler('resource')
     .QueryInterface(Ci.nsIResProtocolHandler);
@@ -1239,6 +1233,9 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     watchWindows(addKeywordSuggestions);
     // Add enter-selects functionality to all windows
     watchWindows(addEnterSelects);
+
+    // Create a one time blob file
+    createWorker();
     // Add functionality to do search based on current engine
     // via address bar if no result matches
     if (pref("showSearchSuggestion")) {
@@ -1246,9 +1243,6 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
       watchWindows(helpAutoCompleteSearch);
       addAutoCompleteSearch();
     }
-
-    // Create a one time blob file
-    watchWindows(createWorker);
     // Add instant preview facility if pref'd on
     if (pref("showInstantPreview"))
       watchWindows(addPreviews);
