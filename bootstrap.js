@@ -58,11 +58,11 @@ let bookmarksKeywords = [];
 let searchSuggestionDisplayed = false;
 
 // Global link to blob file url and worker
-let blobURL, worker;
+let blobURL, worker = null;
 // Global variables to keep track of keyboard movements
 let hasMoved, hasDeleted;
 // Global results arrays
-let results = [];
+let results = [], origMaxResults;
 // Global reference to XML Query
 let xmlQuery;
 
@@ -321,7 +321,7 @@ function addEnterSelects(window) {
       } catch (ex) {}
 
       // Tell the worker that popup has loaded to help search suggestion
-      if (pref("showSearchSuggestion") && !searchSuggestionDisplayed)
+      if (pref("showSearchSuggestion") && !searchSuggestionDisplayed && popup._matchCount == 0)
         worker.postMessage(JSON.stringify([false]));
 
       // Don't bother if something is already selected
@@ -333,16 +333,16 @@ function addEnterSelects(window) {
         return;
 
       let firstURL = popup.richlistbox.getItemAtIndex(0)._url.textContent;
-      let {value, selectionStart, selectionEnd} = gURLBar;
+      let {selectionStart, selectionEnd} = gURLBar;
       // Don't auto-select if we have a url
       if (gURLBar.willHandle && (!firstURL.match(new RegExp("("
-        + value.replace("\/", "\\/").replace("\?", "\\?") + ")"))
+        + gURLBar.value.replace("\/", "\\/").replace("\?", "\\?") + ")"))
         || selectionStart != selectionEnd))
           return;
 
       // We passed all the checks, so pretend the user has the first result
       // selected, so this causes the UI to show the selection style
-      if (value == results[0] || !searchSuggestionDisplayed)
+      if (gURLBar.value == results[0] || !searchSuggestionDisplayed)
         popup.selectedIndex = 0;
 
       // If the just-added result is what to auto-select, make it happen
@@ -565,39 +565,13 @@ function addSearchSuggestion(window) {
 // Function to handle search results from the worker
 function handleSearchResults() {}
 
-// Add an autocomplete search engine to provide location bar suggestions
-function addAutoCompleteSearch(window) {
-  // Getting the current search engine
-  let currentSearchEngine = Services.search.currentEngine;
-  // If no current search engine , then using the first one
-  if (currentSearchEngine == null)
-    currentSearchEngine = Services.search.getEngines()[0];
-
-  let engineName = currentSearchEngine.name;
-  const contract = "@mozilla.org/autocomplete/search;1?name=" + engineName.toLowerCase();
-  const desc = engineName + " AutoComplete";
-  const uuid = Components.ID("42778970-8fae-454d-ad3f-eea88b945af1");
+// Helpwr function for autoCompleteSearch
+function helpAutoCompleteSearch(window) {
   let {gURLBar} = window;
   let {popup} = gURLBar;
-  let {async} = makeWindowHelpers(window);
-
-  function searchValid() {
-    let {selectionStart, selectionEnd, value} = gURLBar;
-    return ((popup._matchCount == Math.max(results.length, 1)
-      && searchSuggestionDisplayed && !hasMoved) || !popup.mPopupOpen
-      || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
-      && value.length > 0 && isURI(value) == null
-      && isKeyword(value) == null && pref("showSearchSuggestion");
-  }
-
-  // Defining the XML Query
-  xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
-    .createInstance(Ci.nsIXMLHttpRequest);
-
-  let origMaxResults = popup._maxResults;
   unload(function() {
     window.gURLBar.popup._maxResults = origMaxResults;
-  }, window);
+  });
 
   hasDeleted = false;
   hasMoved = false;
@@ -644,13 +618,48 @@ function addAutoCompleteSearch(window) {
   });
   listen(window, gURLBar, "input", function() {
     if (searchSuggestionDisplayed) {
-      let {value} = gURLBar;
-      if (value == results[0].slice(0, value.length)) {
+      let val = gURLBar.value;
+      if (val == results[0].slice(0, val.length)) {
         gURLBar.value = results[0];
-        gURLBar.setSelectionRange(value.length, results[0].length);
+        gURLBar.setSelectionRange(val.length, results[0].length);
       }
     }
   });
+}
+
+// Add an autocomplete search engine to provide location bar suggestions
+function addAutoCompleteSearch() {
+  // Getting the current search engine
+  let currentSearchEngine = Services.search.currentEngine;
+  // If no current search engine , then using the first one
+  if (currentSearchEngine == null)
+    currentSearchEngine = Services.search.getEngines()[0];
+
+  let engineName = currentSearchEngine.name;
+  const contract = "@mozilla.org/autocomplete/search;1?name=" + engineName.toLowerCase();
+  const desc = engineName + " AutoComplete";
+  const uuid = Components.ID("42778970-8fae-454d-ad3f-eea88b945af1");
+
+  // Function to get the active window
+  let windowSet = Cc["@mozilla.org/embedcomp/window-watcher;1"]
+      .getService(Ci.nsIWindowWatcher);
+
+  // Updating original max results
+  origMaxResults = windowSet.activeWindow.gURLBar.popup._maxResults;
+  function searchValid(gURLBar) {
+    let {popup} = gURLBar;
+    let {selectionStart, selectionEnd} = gURLBar;
+    return ((popup._matchCount == Math.max(results.length, 1)
+      && searchSuggestionDisplayed && !hasMoved) || !popup.mPopupOpen
+      || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
+      && gURLBar.value.length > 0 && isURI(gURLBar.value) == null
+      && isKeyword(gURLBar.value) == null && pref("showSearchSuggestion");
+  }
+
+  // Defining the XML Query
+  xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+    .createInstance(Ci.nsIXMLHttpRequest);
+
   // listener for the search
   let searchListener = null;
   // Implement the autocomplete search that handles twitter queries
@@ -667,8 +676,12 @@ function addAutoCompleteSearch(window) {
   };
 
   xmlQuery.onload = function() {
+    let window = windowSet.activeWindow;
+    let {gURLBar} = window;
+    let {popup} = gURLBar;
+    let {async} = makeWindowHelpers(window);
     async(function () {
-      if (!searchValid() || hasMoved || hasDeleted) {
+      if (!searchValid(gURLBar) || hasMoved || hasDeleted) {
         searchSuggestionDisplayed = false;
         popup._maxResults = origMaxResults;
         return;
@@ -722,17 +735,18 @@ function addAutoCompleteSearch(window) {
         searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
         get searchString() gURLBar.value,
       });
-    }, searchSuggestionDisplayed? 0: 75);
+    }, searchSuggestionDisplayed? 0: 650);
   };
 
   handleSearchResults = function() {
-    if (!searchValid() || hasMoved || hasDeleted) {
+    let {gURLBar} = windowSet.activeWindow;
+    if (!searchValid(gURLBar) || hasMoved || hasDeleted) {
       searchSuggestionDisplayed = false;
-      popup._maxResults = origMaxResults;
+      gURLBar.popup._maxResults = origMaxResults;
       return;
     }
     xmlQuery.open('GET','http://google.com/complete/search?output=toolbar&q='
-      + gURLBar.value, true);
+      + encodeURIComponent(gURLBar.value), true);
     xmlQuery.send(null);
   };
 
@@ -932,39 +946,25 @@ function populateKeywords() {
 }
 
 function createWorker(window) {
-  let bb = new window.MozBlobBuilder();
-  bb.append("self.addEventListener('message', function(e) {" +
-    "var d = JSON.parse(e.data); if (d[0] == true) {" +
-      "var sK = [],oK = [],aK = d[1];" +
-      "for (var i = 0; i < aK.length; i++) {" +
-        "var m = false, K = aK[i];" +
-        "oK.some(function(oP) {" +
-          "K.some(function(k) {" +
-            "if (oP.indexOf(k) != -1) {" +
-              "m = true;return true;}" +
-          "}); if (m) {" +
-            "for (var j = 0; j < K.length; j++) {" +
-              "if (oP.indexOf(K[j]) == -1)" +
-                "oP.push(K[j].slice(0));" +
-            "}return true;}});" +
-        "if (!m && K.length > 0)" +
-          "oK.push(K.slice(0));}" +
-      "do {" +
-        "aK = aK.filter(function(K) K.length > 0);" +
-        "if (aK.length == 0) break;" +
-        "aK.map(function(K) {" +
-          "var k = K.shift();" +
-          "if (sK.indexOf(k) == -1) sK.push(k);" +
-          "});} while (true);" +
-      "self.postMessage(JSON.stringify([true, [oK, sK]]));" +
-    "} else self.postMessage(JSON.stringify([false]));" +
-  "}, false);");
+  if (worker != null) {
+    // Returning after populate keyword call as worker already present
+    populateKeywords();
+    return;
+  }
 
-  // Obtain a blob URL reference to our worker 'file'.
-  blobURL = window.URL.createObjectURL(bb.getBlob());
+  // Creating resource reference to run the worker file
+  const resourceHandler = Services.io.getProtocolHandler('resource')
+    .QueryInterface(Ci.nsIResProtocolHandler);
+  const uuidgen = Cc["@mozilla.org/uuid-generator;1"]
+    .getService(Ci.nsIUUIDGenerator);
+  const URI = __SCRIPT_URI_SPEC__.replace(/bootstrap\.js$/, "");
+  const alias  = "autocomplete" + uuidgen.generateUUID().toString();
+  resourceHandler.setSubstitution(alias, Services.io.newURI(URI
+    + '/scripts/', null, null));
 
   // Creating the worker to be used whenever by the addon
-  worker = new Worker(blobURL);
+  worker = new Worker("resource://" + alias + "/worker.js");
+
   // Adding the event Handler
   function workerMessageHandler(event) {
     let data = JSON.parse(event.data);
@@ -975,14 +975,16 @@ function createWorker(window) {
   }
   worker.addEventListener('message', workerMessageHandler, false);
 
-  // Calling the function to add keywords
-  populateKeywords();
-
   unload(function() {
     worker.removeEventListener('message', workerMessageHandler, false);
     worker.terminate();
     worker = null;
-  }, window);
+    resourceHandler.setSubstitution(alias, null);
+    resourceHandler = null;
+  });
+
+  // Calling the function to add keywords
+  populateKeywords();
 }
 
 // Fucntion to add a preview for domains and searches
@@ -1241,7 +1243,8 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     // via address bar if no result matches
     if (pref("showSearchSuggestion")) {
       watchWindows(addSearchSuggestion);
-      watchWindows(addAutoCompleteSearch);
+      watchWindows(helpAutoCompleteSearch);
+      addAutoCompleteSearch();
     }
 
     // Create a one time blob file
