@@ -62,7 +62,7 @@ let blobURL, worker = null;
 // Global variables to keep track of keyboard movements
 let hasMoved, hasDeleted;
 // Global results arrays
-let results = [], origMaxResults;
+let results = [], origMaxResults = null;
 // Global reference to XML Query
 let xmlQuery;
 
@@ -572,6 +572,9 @@ function helpAutoCompleteSearch(window) {
   unload(function() {
     window.gURLBar.popup._maxResults = origMaxResults;
   });
+  // Updating original max results
+  if (origMaxResults == null)
+    origMaxResults = gURLBar.popup._maxResults;
 
   hasDeleted = false;
   hasMoved = false;
@@ -644,8 +647,6 @@ function addAutoCompleteSearch() {
   let windowSet = Cc["@mozilla.org/embedcomp/window-watcher;1"]
       .getService(Ci.nsIWindowWatcher);
 
-  // Updating original max results
-  origMaxResults = windowSet.activeWindow.gURLBar.popup._maxResults;
   function searchValid(gURLBar) {
     let {popup} = gURLBar;
     let {selectionStart, selectionEnd} = gURLBar;
