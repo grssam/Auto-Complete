@@ -310,7 +310,7 @@ function addEnterSelects(window) {
 
       // We passed all the checks, so pretend the user has the first result
       // selected, so this causes the UI to show the selection style
-      if (gURLBar.value == results[0] || !searchSuggestionDisplayed)
+      if ((gURLBar.value == results[0] || !searchSuggestionDisplayed) && pref("selectFirst"))
         popup.selectedIndex = 0;
 
       // If the just-added result is what to auto-select, make it happen
@@ -342,7 +342,7 @@ function addEnterSelects(window) {
     gURLBar.selectTextRange(currentQuery.length, keyword.length);
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
+    async(function() gURLBar.controller.startSearch(gURLBar.value));
   }
 
   listen(window, gURLBar, "keydown", function(aEvent) {
@@ -1049,61 +1049,23 @@ function addPreviews(window) {
     }
   }
 
-  // Provide callbacks to stop checking the popup
-  let stop = false;
-  function stopIt() stop = true;
-  unload(function() {
-    stopIt();
-    removePreview();
-  }, window);
-
-  // Keep checking if the popup has something to preview
-  listen(window, popup, "popuphidden", stopIt);
-  listen(window, popup, "popupshown", function() {
-    // Only recursively go again for a repeating check if not stopping
-    if (stop) {
-      stop = false;
-      return;
-    }
-    (Utils.delay || Utils.namedTimer)(
-        arguments.callee, 100, window, 'preview-popup-shown');
-
-    // Short circuit if there's no suggestions but don't remove the preview
-    if (!urlBar.popupOpen)
-      return;
-
-    // Return if urlBar displaying current page url
-    if (browser.selectedBrowser.currentURI.spec.replace(/^(https?:\/\/)/,"")
-      .replace(/(\/?$)/,"") == urlBar.value.replace(/^(https?:\/\/)/,"").replace(/(\/?$)/,""))
-      return;
-
-    // Make sure nothing is selected if not suggesting search
-    if (popup.selectedIndex > -1 && !searchSuggestionDisplayed) {
-      removePreview();
-      return;
-    }
-
-    // Make sure we have either a domain suggested or a search suggestion
-    if (isURI(urlBar.value) == null && !searchSuggestionDisplayed) {
-      removePreview();
-      return;
-    }
-
-    // Only auto-load some types of uris
-    let url = urlBar.value;
+  // Provide a way to preview url in urlbar
+  function showPreview(url) {
+     // Only auto-load some types of uris
+    if (url == null)
+      url = urlBar.value;
     if (!searchSuggestionDisplayed) {
       if (url.search('://') == -1)
         url = "http://" + url;
       // Only preivew certain websites and only if they have been suggested
-      if (url.search(/^(data|ftp|https?):/) == -1 
-        || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1
-        || !justCompleted) {
+      if (url.search(/^(data|ftp|https?):/) == -1 || (!justCompleted && !hasMoved)
+        || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1) {
           removePreview();
           return;
       }
     }
     else {
-      if (hasMoved || hasDeleted || isURI(url)) {
+      if (hasDeleted || isURI(url)) {
         removePreview();
         return;
       }
@@ -1147,6 +1109,54 @@ function addPreviews(window) {
     // Load the url if new
     if (preview.getAttribute("src") != url)
       preview.setAttribute("src", url);
+  }
+
+  // Provide callbacks to stop checking the popup
+  let stop = false;
+  function stopIt() stop = true;
+  unload(function() {
+    stopIt();
+    removePreview();
+  }, window);
+
+  // Keep checking if the popup has something to preview
+  listen(window, popup, "popuphidden", stopIt);
+  listen(window, popup, "popupshown", function() {
+    // Only recursively go again for a repeating check if not stopping
+    if (stop) {
+      stop = false;
+      return;
+    }
+    (Utils.delay || Utils.namedTimer)(
+        arguments.callee, 100, window, 'preview-popup-shown');
+
+    // Short circuit if there's no suggestions but don't remove the preview
+    if (!urlBar.popupOpen)
+      return;
+
+    // Return if urlBar displaying current page url
+    if (browser.selectedBrowser.currentURI.spec.replace(/^(https?:\/\/)/,"")
+      .replace(/(\/?$)/,"") == urlBar.value.replace(/^(https?:\/\/)/,"").replace(/(\/?$)/,""))
+      return;
+
+    // Make sure nothing is selected if not suggesting search
+    if (popup.selectedIndex > -1 && !searchSuggestionDisplayed && !pref("instantPreviewEverything")) {
+      removePreview();
+      return;
+    }
+
+    // use the url from first result
+    if (popup.selectedIndex == 0 && pref("instantPreviewEverything")) {
+      showPreview(popup.richlistbox.getItemAtIndex(0)._url.textContent);
+      return;
+    }
+    // Make sure we have either a domain suggested or a search suggestion
+    else if (isURI(urlBar.value) == null && !searchSuggestionDisplayed) {
+      removePreview();
+      return;
+    }
+
+    showPreview();
   });
 
   // Make the preview permanent on enter
@@ -1162,6 +1172,7 @@ function addPreviews(window) {
         break;
     }
   });
+  let shouldRemove = false;
   listen(window, urlBar, "keypress", function(event) {
     switch (event.keyCode) {
       // Remove the preview on cancel or edits
@@ -1173,9 +1184,21 @@ function addPreviews(window) {
       case event.DOM_VK_HOME:
       case event.DOM_VK_LEFT:
       case event.DOM_VK_RIGHT:
+        shouldRemove = true;
+        removePreview();
+        break;
       case event.DOM_VK_UP:
       case event.DOM_VK_DOWN:
+        if (!hasMoved)
+          break;
         removePreview();
+        if (!pref("instantPreviewEverything"))
+          break;
+        if (shouldRemove) {
+          shouldRemove = false;
+          break;
+        }
+        showPreview(popup.richlistbox.getItemAtIndex(0)._url.textContent);
         break;
     }
   });

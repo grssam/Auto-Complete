@@ -39,6 +39,10 @@
     title="Instantly Preview domains and search results"
     type="bool"/>
 
+  <setting pref="extensions.AutoComplete.instantPreviewEverything"
+    title="Instantly Preview every result of Awesomebar Popup on hover/up/down"
+    type="bool"/>
+
   <setting pref="extensions.AutoComplete.showDomains"
     title="Suggest domains (e.g., mozilla.com) as keywords"
     type="bool"/>
@@ -48,5 +52,9 @@
 
   <setting pref="extensions.AutoComplete.showSearchKeywords"
     title="Suggest search engine keywords" type="bool"/>
+
+  <setting pref="extensions.AutoComplete.selectFirst"
+    title="Automatically select the first result."
+    type="bool"/>
 
 </box>

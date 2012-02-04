@@ -47,6 +47,8 @@ pref.defaults = {
   showSearchKeywords: true,
   showSearchSuggestion: true,
   showInstantPreview: true,
+  selectFirst: true,
+  instantPreviewEverything: true,
   autoFillDefault: Services.prefs.getBranch("browser.urlbar.").getBoolPref("autoFill")
 };
 
