@@ -193,6 +193,7 @@ function makeWindowHelpers(window) {
 
   // Call a function after waiting a little bit
   function async(callback, delay) {
+    delay = delay || 0;
     let timer = setTimeout(function() {
       stopTimer();
       callback();
@@ -204,11 +205,10 @@ function makeWindowHelpers(window) {
         return;
       clearTimeout(timer);
       timer = null;
-      unUnload();
     }
 
     // Make sure to stop the timer when unloading
-    let unUnload = unload(stopTimer, window);
+    unload(stopTimer, window);
 
     // Give the caller a way to cancel the timer
     return stopTimer;

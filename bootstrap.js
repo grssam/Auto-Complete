@@ -196,7 +196,7 @@ function getKeyword(query) {
 // Automatically suggest a keyword when typing in the location bar
 function addKeywordSuggestions(window) {
   let {gURLBar} = window;
-  let {async} = makeWindowHelpers(window);
+  let async = makeWindowHelpers(window).async;
   let deleting = false;
 
   // Look for deletes to handle them better on input
@@ -246,7 +246,7 @@ function addKeywordSuggestions(window) {
       currentQuery = gURLBar.textValue;
       deleting = false;
       // Make sure the search suggestions show up without selecting or suggesting
-      async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
+      async(function() gURLBar.controller.startSearch(gURLBar.value));
       return;
     }
 
@@ -266,7 +266,7 @@ function addKeywordSuggestions(window) {
     justCompleted = true;
 
     // Make sure the search suggestions show up
-    async(function() gURLBar.controller.startSearch(gURLBar.value), 1);
+    async(function() gURLBar.controller.startSearch(gURLBar.value));
   });
 }
 
@@ -277,41 +277,9 @@ function addEnterSelects(window) {
   // Keep track of last shown result's search string
   let lastSearch;
 
-  let {async} = makeWindowHelpers(window);
-
-  // Add some helper functions to various objects
+  let async = makeWindowHelpers(window).async;
   let {gURLBar} = window;
   let {popup} = gURLBar;
-  popup.__defineGetter__("noResults", function() {
-    return this._matchCount == 0;
-  });
-  gURLBar.__defineGetter__("trimmedSearch", function() {
-    return this.controller.searchString.trim();
-  });
-  gURLBar.__defineGetter__("willHandle", function() {
-    // Potentially it's a url if there's no spaces
-    let search = this.trimmedSearch;
-    if (search.match(/ /) == null) {
-      try {
-        // Quit early if the input is already a URI
-        return Services.io.newURI(gURLBar.value, null, null);
-      }
-      catch(ex) {}
-
-      try {
-        // Quit early if the input is domain-like (e.g., site.com/page)
-        return Cc["@mozilla.org/network/effective-tld-service;1"].
-          getService(Ci.nsIEffectiveTLDService).
-          getBaseDomainFromHost(gURLBar.value);
-      }
-      catch(ex) {}
-    }
-
-    // Check if there's an search engine registered for the first keyword
-    let keyword = search.split(/\s+/)[0];
-    return Services.search.getEngineByAlias(keyword);
-  });
-
   // Wait for results to get added to the popup
   let (orig = popup._appendCurrentResult) {
     popup._appendCurrentResult = function() {
@@ -329,15 +297,15 @@ function addEnterSelects(window) {
         return;
 
       // Make sure there's results
-      if (popup.noResults)
+      if (popup._matchCount == 0)
         return;
 
       let firstURL = popup.richlistbox.getItemAtIndex(0)._url.textContent;
       let {selectionStart, selectionEnd} = gURLBar;
       // Don't auto-select if we have a url
-      if (gURLBar.willHandle && (!firstURL.match(new RegExp("("
-        + gURLBar.value.replace("\/", "\\/").replace("\?", "\\?") + ")"))
-        || selectionStart != selectionEnd))
+      if ((isURI(gURLBar.value) || isKeyword(gURLBar.value)) && (!firstURL
+        .match(new RegExp("(" + gURLBar.value.replace("\/", "\\/")
+        .replace("\?", "\\?") + ")")) || selectionStart != selectionEnd))
           return;
 
       // We passed all the checks, so pretend the user has the first result
@@ -346,14 +314,14 @@ function addEnterSelects(window) {
         popup.selectedIndex = 0;
 
       // If the just-added result is what to auto-select, make it happen
-      if (autoSelectOn == gURLBar.trimmedSearch) {
+      if (autoSelectOn == gURLBar.textValue.trim()) {
         // Clear out what to auto-select now that we've done it once
         autoSelectOn = null;
         gURLBar.controller.handleEnter(true);
       }
 
       // Remember this to notice if the search changes
-      lastSearch = gURLBar.trimmedSearch;
+      lastSearch = gURLBar.textValue.trim();
     };
 
     unload(function() popup._appendCurrentResult = orig, window);
@@ -364,7 +332,7 @@ function addEnterSelects(window) {
     // If we suggested by order, then don't scrol through alt suggestions
     if (suggestedByOrder)
       return;
-    suggestionIndex+=delta;
+    suggestionIndex += delta;
     let keyword = getKeyword(currentQuery);
     if (keyword == null || keyword == currentQuery)
       return;
@@ -404,7 +372,7 @@ function addEnterSelects(window) {
 
       // For anything else, deselect the entry if the search changed
       default:
-        if (lastSearch != gURLBar.trimmedSearch && !searchSuggestionDisplayed)
+        if (lastSearch != gURLBar.textValue.trim() && !searchSuggestionDisplayed)
           popup.selectedIndex = -1;
         return;
     }
@@ -414,12 +382,12 @@ function addEnterSelects(window) {
       return;
 
     // Deselect if the selected result isn't for the current search
-    if (!popup.noResults && lastSearch != gURLBar.trimmedSearch && !searchSuggestionDisplayed) {
+    if (popup._matchCount != 0 && lastSearch != gURLBar.textValue.trim() && !searchSuggestionDisplayed) {
       popup.selectedIndex = -1;
 
       // If it's not a url, we'll want to auto-select the first result
-      if (!gURLBar.willHandle) {
-        autoSelectOn = gURLBar.trimmedSearch;
+      if (!(isURI(gURLBar.value) || isKeyword(gURLBar.value))) {
+        autoSelectOn = gURLBar.textValue.trim();
 
         // Don't load what's typed in the location bar because it's a search
         aEvent.preventDefault();
@@ -529,7 +497,7 @@ function isKeyword(input) {
 
 // Function to searching facility if no match found
 function addSearchSuggestion(window) {
-  let {change} = makeWindowHelpers(window);
+  let change = makeWindowHelpers(window).change;
   let {gURLBar} = window;
   let {popup} = gURLBar;
 
@@ -556,10 +524,10 @@ function addSearchSuggestion(window) {
     gURLBar.initSearchNames();
   };
 
-  // Add in the twitter search and remove on cleanup
+  // Add in the autocompletesearch and remove on cleanup
   let origSearch = gURLBar.getAttribute("autocompletesearch");
   setSearch("google " + origSearch);
-  unload(function() setSearch(origSearch));
+  unload(function() setSearch(origSearch), window);
 }
 
 // Function to handle search results from the worker
@@ -571,7 +539,7 @@ function helpAutoCompleteSearch(window) {
   let {popup} = gURLBar;
   unload(function() {
     window.gURLBar.popup._maxResults = origMaxResults;
-  });
+  }, window);
   // Updating original max results
   if (origMaxResults == null)
     origMaxResults = gURLBar.popup._maxResults;
@@ -632,6 +600,7 @@ function helpAutoCompleteSearch(window) {
 
 // Add an autocomplete search engine to provide location bar suggestions
 function addAutoCompleteSearch() {
+  unload(function() currentEngine = null);
   // Getting the current search engine
   let currentSearchEngine = Services.search.currentEngine;
   // If no current search engine , then using the first one
@@ -680,7 +649,7 @@ function addAutoCompleteSearch() {
     let window = windowSet.activeWindow;
     let {gURLBar} = window;
     let {popup} = gURLBar;
-    let {async} = makeWindowHelpers(window);
+    let async = makeWindowHelpers(window).async;
     async(function () {
       if (!searchValid(gURLBar) || hasMoved || hasDeleted) {
         searchSuggestionDisplayed = false;
@@ -756,6 +725,8 @@ function addAutoCompleteSearch() {
   Cm.QueryInterface(registrar).registerFactory(uuid, desc, contract, search);
   unload(function() {
     Cm.QueryInterface(registrar).unregisterFactory(uuid, search);
+    xmlQuery.abort();
+    xmlQuery = null;
   });
 }
 
@@ -975,7 +946,6 @@ function createWorker() {
     worker.terminate();
     worker = null;
     resourceHandler.setSubstitution(alias, null);
-    resourceHandler = null;
   });
 
   // Calling the function to add keywords
@@ -1221,7 +1191,6 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     let fileURI = addon.getResourceURI("scripts/" + fileName + ".js");
     Services.scriptloader.loadSubScript(fileURI.spec, global);
   });
-
   Cu.import("resource://services-sync/util.js");
 
   function initiateFunctions() {
@@ -1235,7 +1204,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     // Add enter-selects functionality to all windows
     watchWindows(addEnterSelects);
 
-    // Create a one time blob file
+    // Load the worker file
     createWorker();
     // Add functionality to do search based on current engine
     // via address bar if no result matches
