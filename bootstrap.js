@@ -430,25 +430,13 @@ function addEnterSelects(window) {
   listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_ESCAPE:
-        let input = event.originalTarget;
-        let {selectionEnd, selectionStart} = input;
-        if ((selectionStart == 0 || selectionStart == selectionEnd)
-          && selectionEnd == gURLBar.value.length && !popup.mPopupOpen) {
+        if (gURLBar.value == window.gBrowser.selectedBrowser.currentURI.spec
+          && !popup.mPopupOpen) {
             async(function() {
               window.gBrowser.selectedBrowser.focus();
             }, 50);
             return;
         }
-        else if (popup.mPopupOpen) {
-          popup.selectedIndex = -1;
-          popup.hidePopup();
-        }
-        else {
-          gURLBar.value = window.gBrowser.selectedBrowser.currentURI.spec;
-          gURLBar.selectTextRange(0, gURLBar.value.length);
-        }
-        event.stopPropagation();
-        event.preventDefault();
         break;
     }
   });
