@@ -53,18 +53,14 @@ let sortedKeywords = [];
 let orderedKeywords = [];
 // Keep track of bookmarks Keywords list for better search suggestion
 let bookmarksKeywords = [];
-
-// Keep track of search suggestion and the current search engine
-let searchSuggestionDisplayed = false;
-
-// Global link to blob file url and worker
-let blobURL, worker = null;
+// Keep track of search suggestion and the current search term
+let searchSuggestionDisplayed = false, currentSearchTerm = "";
+// Global link to worker
+let worker = null;
 // Global variables to keep track of keyboard movements
-let hasMoved, hasDeleted;
+let hasMoved, hasDeleted, userInput;
 // Global results arrays
-let results = [], origMaxResults = null;
-// Global reference to XML Query
-let xmlQuery;
+let results = [], startingIndex = 0;
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
@@ -253,8 +249,9 @@ function addKeywordSuggestions(window) {
     // See if we can suggest a keyword if it isn't the current query
     let query = gURLBar.textValue;
     // Don't suggest anything is bookmark keyword or uri or suggesting to search
-    if (isKeyword(query) || isURI(query) || searchSuggestionDisplayed)
-      return;
+    if (isKeyword(query) || isURI(query.split(/[ ]+/)[0])
+      || (searchSuggestionDisplayed && startingIndex == 0))
+        return;
 
     let keyword = getKeyword(query);
     if (keyword == null || keyword == query)
@@ -276,7 +273,6 @@ function addEnterSelects(window) {
   let autoSelectOn;
   // Keep track of last shown result's search string
   let lastSearch;
-
   let async = makeWindowHelpers(window).async;
   let {gURLBar} = window;
   let {popup} = gURLBar;
@@ -288,8 +284,8 @@ function addEnterSelects(window) {
         orig.apply(this, arguments);
       } catch (ex) {}
 
-      // Tell the worker that popup has loaded to help search suggestion
-      if (pref("showSearchSuggestion") && !searchSuggestionDisplayed && popup._matchCount == 0)
+      // Inform that popup has been loaded/filled
+      if (popup.mPopupOpen)
         worker.postMessage(JSON.stringify([false]));
 
       // Don't bother if something is already selected
@@ -303,14 +299,14 @@ function addEnterSelects(window) {
       let firstURL = popup.richlistbox.getItemAtIndex(0)._url.textContent;
       let {selectionStart, selectionEnd} = gURLBar;
       // Don't auto-select if we have a url
-      if ((isURI(gURLBar.value) || isKeyword(gURLBar.value)) && (!firstURL
-        .match(new RegExp("(" + gURLBar.value.replace("\/", "\\/")
+      if (isURI(gURLBar.value.split(/[ ]+/)[0]) && (!firstURL.match(
+        new RegExp("(" + gURLBar.value.replace("\/", "\\/")
         .replace("\?", "\\?") + ")")) || selectionStart != selectionEnd))
           return;
 
       // We passed all the checks, so pretend the user has the first result
       // selected, so this causes the UI to show the selection style
-      if ((gURLBar.value == results[0] || !searchSuggestionDisplayed) && pref("selectFirst"))
+      if (pref("selectFirst"))
         popup.selectedIndex = 0;
 
       // If the just-added result is what to auto-select, make it happen
@@ -372,8 +368,6 @@ function addEnterSelects(window) {
 
       // For anything else, deselect the entry if the search changed
       default:
-        if (lastSearch != gURLBar.textValue.trim() && !searchSuggestionDisplayed)
-          popup.selectedIndex = -1;
         return;
     }
 
@@ -382,17 +376,14 @@ function addEnterSelects(window) {
       return;
 
     // Deselect if the selected result isn't for the current search
-    if (popup._matchCount != 0 && lastSearch != gURLBar.textValue.trim() && !searchSuggestionDisplayed) {
+    if (popup._matchCount != 0 && lastSearch != gURLBar.textValue.trim() && !hasMoved) {
       popup.selectedIndex = -1;
-
       // If it's not a url, we'll want to auto-select the first result
       if (!(isURI(gURLBar.value) || isKeyword(gURLBar.value))) {
         autoSelectOn = gURLBar.textValue.trim();
-
         // Don't load what's typed in the location bar because it's a search
         aEvent.preventDefault();
       }
-
       return;
     }
 
@@ -430,12 +421,16 @@ function addEnterSelects(window) {
   listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
       case event.DOM_VK_ESCAPE:
-        if (gURLBar.value == window.gBrowser.selectedBrowser.currentURI.spec
-          && !popup.mPopupOpen) {
-            async(function() {
-              window.gBrowser.selectedBrowser.focus();
-            }, 50);
-            return;
+        userInput = false;
+        if (gURLBar.value.replace(/[\/]$/, "").replace(/^(https?:\/\/)/, "") ==
+          window.gBrowser.selectedBrowser.currentURI.spec.replace(/[\/]$/, "").replace(/^(https?:\/\/)/, ""))
+            async(function() window.gBrowser.selectedBrowser.focus(), 50);
+        else if (gURLBar.value == "") {
+          gURLBar.value = window.gBrowser.selectedBrowser.currentURI.spec;
+          gURLBar.setSelectionRange(0, gURLBar.value.length);
+          if (gURLBar.popup.mPopupOpen)
+            gURLBar.popup.hidePopup();
+          event.preventDefault();
         }
         break;
     }
@@ -491,7 +486,7 @@ function addSearchSuggestion(window) {
 
   // Convert the query into search engine specific url
   function getSearchURL(input) {
-    return isURI(input) != null? input: convertToSearchURL(input);
+    return isURI(input.split(/[ ]+/)[0]) != null? input: convertToSearchURL(input);
   }
 
   // Convert inputs to search urls
@@ -519,21 +514,17 @@ function addSearchSuggestion(window) {
 }
 
 // Function to handle search results from the worker
+function handleSearchResults2() {}
 function handleSearchResults() {}
 
 // Helpwr function for autoCompleteSearch
 function helpAutoCompleteSearch(window) {
   let {gURLBar} = window;
   let {popup} = gURLBar;
-  unload(function() {
-    window.gURLBar.popup._maxResults = origMaxResults;
-  }, window);
-  // Updating original max results
-  if (origMaxResults == null)
-    origMaxResults = gURLBar.popup._maxResults;
-
+  let async = makeWindowHelpers(window).async;
   hasDeleted = false;
   hasMoved = false;
+  userInput = false;
   // Look for deletes to improve the timing of search suggestions
   listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
@@ -558,6 +549,7 @@ function helpAutoCompleteSearch(window) {
       case event.DOM_VK_HOME:
       case event.DOM_VK_END:
         hasMoved = true;
+        userInput = false;
         break;
       default:
         hasDeleted = false;
@@ -565,25 +557,169 @@ function helpAutoCompleteSearch(window) {
         break;
     }
   });
+  listen(window, gURLBar, "keypress", function(event) {
+    let curIndex = gURLBar.popup.selectedIndex;
+    switch (event.keyCode) {
+      case event.DOM_VK_DOWN:
+      case event.DOM_VK_UP:
+        // Hack around to display the results values in the gURLBar
+        if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved) {
+          gURLBar.value = results[curIndex - startingIndex];
+          gURLBar.setSelectionRange(currentSearchTerm.length, results[curIndex - startingIndex].length);
+        }
+        break;
+    }
+  });
 
   // Resetting the max results and searchSuggestionDisplayed 
   // on blurring out of urlBar and on focus
   listen(window, gURLBar, "blur", function() {
-    window.gURLBar.popup._maxResults = origMaxResults;
-    hasDeleted = hasMoved = searchSuggestionDisplayed = false;
+    userInput = hasDeleted = hasMoved = searchSuggestionDisplayed = false;
   });
   listen(window, gURLBar, "focus", function() {
-    hasDeleted = hasMoved = searchSuggestionDisplayed = false;
+    userInput = hasDeleted = hasMoved = searchSuggestionDisplayed = false;
   });
   listen(window, gURLBar, "input", function() {
-    if (searchSuggestionDisplayed) {
+    if (hasMoved || hasDeleted)
+      return;
+    userInput = true;
+    let {gURLBar} = window;
+    if (startingIndex == 0 && results[0]) {
       let val = gURLBar.value;
       if (val == results[0].slice(0, val.length)) {
         gURLBar.value = results[0];
         gURLBar.setSelectionRange(val.length, results[0].length);
       }
     }
+    searchSuggestionDisplayed = false;
+    async(function() {
+      if (hasMoved || hasDeleted)
+        return;
+      if (gURLBar.popup._matchCount == 0 && userInput && !searchSuggestionDisplayed) {
+        xmlQuery.abort();
+        handleSearchResults2();
+      }
+    }, 500);
   });
+  listen(window, gURLBar.popup, "popupshown", function() {
+    searchSuggestionDisplayed = false;
+    handleSearchResults();
+  });
+
+  // Getting the current search engine
+  let currentSearchEngine = Services.search.currentEngine;
+  // If no current search engine , then using the first one
+  if (currentSearchEngine == null)
+    currentSearchEngine = Services.search.getEngines()[0];
+
+  let engineName = currentSearchEngine.name;
+  startingIndex = 0;
+
+  // Defining the XML Query
+  let xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+    .createInstance(Ci.nsIXMLHttpRequest);
+
+  xmlQuery.onload = function() {
+    let {gURLBar} = window;
+    let {popup} = gURLBar;
+    if (searchSuggestionDisplayed || !userInput || popup._matchCount == 0)
+      return;
+
+    results = [];
+    try {
+      let xmlResult = xmlQuery.responseXML.getElementsByTagName('suggestion');
+      for (let i=0; i < Math.min(6, xmlResult.length); i++)
+        results.push(xmlResult[i].getAttribute('data'));
+    } catch (ex) {}
+
+    if (results.length == 0)
+      results.push(gURLBar.value);
+
+    let existingItemsCount = popup._matchCount;
+    startingIndex = Math.min(6, existingItemsCount);
+    userInput = false;
+    searchSuggestionDisplayed = true;
+    // Process the popup result and add/replace the google search suggestion
+    // trim the leading/trailing whitespace
+    let trimmedSearchString = gURLBar.value.slice(0, gURLBar.selectionStart).trim();
+    let firefoxEntries = 0, searchEntries = 0,i = 0;
+    while (i < popup._maxResults) {
+      // Firest allow firefox results to popup (max 6)
+      if (firefoxEntries < 6 && i < existingItemsCount && searchEntries < 6) {
+        if (!isURI(popup.richlistbox.childNodes[i].getAttribute("url"))
+          && popup.richlistbox.childNodes[i].getAttribute("title")
+          .toLowerCase().indexOf(trimmedSearchString) < 0) {
+            let (item = popup.richlistbox.childNodes[i]) {
+              popup.richlistbox.removeChild(item);
+              item.collapsed = true;
+              popup.richlistbox.appendChild(item);
+            }
+        }
+        else {
+          firefoxEntries++;
+          i++;
+        }
+        continue;
+      }
+      // Now show search suggestions
+      else if (firefoxEntries < 6 && searchEntries < 6) {
+        startingIndex = firefoxEntries;
+        searchEntries++;
+      }
+      else if (firefoxEntries >= 6 && searchEntries < 6) {
+        startingIndex = 6;
+        searchEntries++;
+      }
+      else
+        break;
+
+      let url = isURI(results[i - startingIndex]) != null?
+        results[i - startingIndex]: convertToSearchURL(results[i - startingIndex]);
+      let title = (!isURI(results[i - startingIndex])?
+        engineName + " search: ": "") + results[i - startingIndex];
+
+      let item;
+      if (i < existingItemsCount)
+        item = popup.richlistbox.childNodes[i];
+      else
+        item = window.document.createElementNS
+        ("http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul", "richlistitem");
+
+      // Setting the required new values
+      item.setAttribute("image", SEARCH_ICON);
+      item.setAttribute("url", url);
+      item.setAttribute("title", title);
+      item.setAttribute("type",(i == startingIndex)? "suggestfirst": "suggesthint");
+      item.setAttribute("text", isURI(results[0])? "": trimmedSearchString);
+
+      if (i < existingItemsCount) {
+        // Using the already present entry
+        item._adjustAcItem();
+        item.collapsed = false;
+      }
+      else {
+        // Appending a new entry in the richlistbox
+        item.className = "autocomplete-richlistitem";
+        item.collapsed = false;
+        popup.richlistbox.appendChild(item);
+      }
+      i++;
+    }
+  };
+
+  // Handle result function for this local xmlQuery onload
+  handleSearchResults = function() {
+    let {selectionStart} = gURLBar;
+    xmlQuery.open('GET','http://google.com/complete/search?output=toolbar&q='
+      + encodeURIComponent(gURLBar.value.slice(0, selectionStart)), true);
+    currentSearchTerm = gURLBar.value.slice(0, selectionStart);
+    xmlQuery.send(null);
+  }
+
+  unload(function() {
+    xmlQuery.abort();
+    xmlQuery = null;
+  }, window);
 }
 
 // Add an autocomplete search engine to provide location bar suggestions
@@ -600,25 +736,12 @@ function addAutoCompleteSearch() {
   const desc = engineName + " AutoComplete";
   const uuid = Components.ID("42778970-8fae-454d-ad3f-eea88b945af1");
 
-  // Function to get the active window
   let windowSet = Cc["@mozilla.org/embedcomp/window-watcher;1"]
-      .getService(Ci.nsIWindowWatcher);
+    .getService(Ci.nsIWindowWatcher);
 
-  function searchValid(gURLBar) {
-    let {popup} = gURLBar;
-    let {selectionStart, selectionEnd} = gURLBar;
-    return ((popup._matchCount == Math.max(results.length, 1)
-      && searchSuggestionDisplayed && !hasMoved) || !popup.mPopupOpen
-      || popup._matchCount == 0 || (popup.selectedIndex == -1 && !hasMoved))
-      && gURLBar.value.length > 0 && isURI(gURLBar.value) == null
-      && isKeyword(gURLBar.value) == null && pref("showSearchSuggestion");
-  }
-
-  // Defining the XML Query
-  xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
+  let xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
     .createInstance(Ci.nsIXMLHttpRequest);
 
-  // listener for the search
   let searchListener = null;
   // Implement the autocomplete search that handles twitter queries
   let search = {
@@ -628,83 +751,74 @@ function addAutoCompleteSearch() {
       // transfer the listener to global variable
       // which can be used asynchronously when needed
       searchListener = listener;
-      handleSearchResults();
     },
     stopSearch: function() {},
   };
 
   xmlQuery.onload = function() {
-    let window = windowSet.activeWindow;
+    if (searchSuggestionDisplayed || !userInput)
+      return;
+    let window;
+    try {
+      window = windowSet.activeWindow;
+    } catch (ex) {
+      window = Cc["@mozilla.org/embedcomp/window-watcher;1"]
+        .getService(Ci.nsIWindowWatcher).activeWindow;
+    }
     let {gURLBar} = window;
-    let {popup} = gURLBar;
-    let async = makeWindowHelpers(window).async;
-    async(function () {
-      if (!searchValid(gURLBar) || hasMoved || hasDeleted) {
-        searchSuggestionDisplayed = false;
-        popup._maxResults = origMaxResults;
-        return;
-      }
-      results = [];
-      try {
-        let xmlResult = xmlQuery.responseXML.getElementsByTagName('suggestion');
-        for (let i=0; i < Math.min(5, xmlResult.length); i++)
-          results.push(xmlResult[i].getAttribute('data'));
-      } catch (ex) {}
+    results = [];
+    try {
+      let xmlResult = xmlQuery.responseXML.getElementsByTagName('suggestion');
+      for (let i=0; i < Math.min(7, xmlResult.length); i++)
+        results.push(xmlResult[i].getAttribute('data'));
+    } catch (ex) {}
 
-      if (results.length == 0)
-        results.push(gURLBar.value);
+    if (results.length == 0)
+      results.push(gURLBar.value);
 
-      searchSuggestionDisplayed = true;
+    searchSuggestionDisplayed = true;
+    userInput = false;
+    startingIndex = 0;
 
-      popup._maxResults = Math.min(5, results.length);
-      // Automatically reset the maxresults's value
-      async(function() {
-        if (!searchSuggestionDisplayed || !gURLBar.focused)
-          popup._maxResults = origMaxResults;
-      }, 60);
-
-      searchListener.onSearchResult(search, {
-        getCommentAt: function(i) {
-          if (i == 0 && results[i].slice(0, gURLBar.value.length).toLowerCase()
-            != gURLBar.value.toLowerCase())
-              return "Did you mean: " + results[i];
-          else if (i == 0) {
-            let ({selectionStart} = gURLBar) {
-              gURLBar.value = results[0];
-              gURLBar.selectTextRange(selectionStart, results[0].length);
-            }
-            return engineName + " search: " + results[i];
+    searchListener.onSearchResult(search, {
+      getCommentAt: function(i) {
+        if (i == 0 && results[i].slice(0, gURLBar.value.length).toLowerCase()
+          != gURLBar.value.toLowerCase()) {
+            gURLBar.popup.selectedIndex = -1;
+            return "Did you mean: " + results[i];
+        }
+        else if (i == 0) {
+          let ({selectionStart} = gURLBar) {
+            gURLBar.value = results[0];
+            gURLBar.selectTextRange(selectionStart, results[0].length);
           }
-          else
-            return engineName + " search: " + results[i];
-        },
-        getImageAt: function() SEARCH_ICON,
-        getLabelAt: function(i) isURI(results[i]) != null? results[i]: convertToSearchURL(results[i]),
-        getValueAt: function(i) results[i],
-        getStyleAt: function(i) {
-          if (i == 0)
-            return "suggestfirst";
-          else
-            return "suggesthint";
-        },
-        get matchCount() Math.min(5,results.length),
-        QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
-        removeValueAt: function() {},
-        searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
-        get searchString() gURLBar.value,
-      });
-    }, searchSuggestionDisplayed? 0: 650);
+          return ((!isURI(results[i]))?engineName + " search: ": "") + results[i];
+        }
+        else
+          return ((!isURI(results[i]))?engineName + " search: ": "") + results[i];
+      },
+      getImageAt: function() SEARCH_ICON,
+      getLabelAt: function(i) isURI(results[i]) != null? results[i]: convertToSearchURL(results[i]),
+      getValueAt: function(i) results[i],
+      getStyleAt: function(i) {
+        if (i == 0)
+          return "suggestfirst";
+        else
+          return "suggesthint";
+      },
+      get matchCount() Math.min(7,results.length),
+      QueryInterface: XPCOMUtils.generateQI([Ci.nsIAutoCompleteResult]),
+      removeValueAt: function() {},
+      searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
+      get searchString() gURLBar.value,
+    });
   };
 
-  handleSearchResults = function() {
+  handleSearchResults2 = function() {
     let {gURLBar} = windowSet.activeWindow;
-    if (!searchValid(gURLBar) || hasMoved || hasDeleted) {
-      searchSuggestionDisplayed = false;
-      gURLBar.popup._maxResults = origMaxResults;
-      return;
-    }
     xmlQuery.open('GET','http://google.com/complete/search?output=toolbar&q='
-      + encodeURIComponent(gURLBar.value), true);
+      + encodeURIComponent(gURLBar.value.slice(0, gURLBar.selectionStart)), true);
+    currentSearchTerm = gURLBar.value.slice(0, gURLBar.selectionStart);
     xmlQuery.send(null);
   };
 
