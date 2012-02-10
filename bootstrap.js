@@ -60,7 +60,7 @@ let worker = null;
 // Global variables to keep track of keyboard movements
 let hasMoved, hasDeleted, userInput;
 // Global results arrays
-let results = [], startingIndex = 0;
+let results = [], startingIndex = 0, origItemStyle;
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
@@ -284,6 +284,13 @@ function addEnterSelects(window) {
         orig.apply(this, arguments);
       } catch (ex) {}
 
+      if (pref("showSearchSuggestion")) {
+        if (pref("minifyResults"))
+          for (let i = 0; i < popup.richlistbox.childNodes.length; i++)
+            maximizeItem(popup.richlistbox.childNodes[i]);
+        popup.adjustHeight();
+      }
+
       // Inform that popup has been loaded/filled
       if (popup.mPopupOpen)
         worker.postMessage(JSON.stringify([false]));
@@ -379,7 +386,7 @@ function addEnterSelects(window) {
     if (popup._matchCount != 0 && lastSearch != gURLBar.textValue.trim() && !hasMoved) {
       popup.selectedIndex = -1;
       // If it's not a url, we'll want to auto-select the first result
-      if (!(isURI(gURLBar.value) || isKeyword(gURLBar.value))) {
+      if (!(isURI(gURLBar.value.split(/[ ]+/)[0]) || isKeyword(gURLBar.value))) {
         autoSelectOn = gURLBar.textValue.trim();
         // Don't load what's typed in the location bar because it's a search
         aEvent.preventDefault();
@@ -445,13 +452,15 @@ function addEnterSelects(window) {
 // Convert a query to a search url
 let currentEngine = Services.search.currentEngine;
 function convertToSearchURL(query) {
-  if (currentEngine == null)
+  if (currentEngine == null || currentEngine != Services.search.currentEngine)
     currentEngine = Services.search.currentEngine || Services.search.getEngines()[0];
   return currentEngine.getSubmission(query).uri.spec;
 }
 
 // Checks if the current input is already a uri
 function isURI(input) {
+  if (!input)
+    return null;
   if (input.match(/ /) == null) {
     try {
       // Quit early if the input is already a URI
@@ -516,6 +525,7 @@ function addSearchSuggestion(window) {
 // Function to handle search results from the worker
 function handleSearchResults2() {}
 function handleSearchResults() {}
+function maximizeItem() {}
 
 // Helpwr function for autoCompleteSearch
 function helpAutoCompleteSearch(window) {
@@ -525,6 +535,10 @@ function helpAutoCompleteSearch(window) {
   hasDeleted = false;
   hasMoved = false;
   userInput = false;
+  // Set the max row so that search suggestions are visible
+  let origRows = gURLBar.getAttribute("maxrows");
+  gURLBar.setAttribute("maxrows", 12);
+  unload(function() gURLBar.setAttribute("maxrows", origRows), window);
   // Look for deletes to improve the timing of search suggestions
   listen(window, gURLBar, "keydown", function(event) {
     switch (event.keyCode) {
@@ -584,7 +598,7 @@ function helpAutoCompleteSearch(window) {
       return;
     userInput = true;
     let {gURLBar} = window;
-    if (startingIndex == 0 && results[0]) {
+    if (startingIndex == 0 && results[0] && !hasMoved && searchSuggestionDisplayed) {
       let val = gURLBar.value;
       if (val == results[0].slice(0, val.length)) {
         gURLBar.value = results[0];
@@ -605,6 +619,19 @@ function helpAutoCompleteSearch(window) {
     searchSuggestionDisplayed = false;
     handleSearchResults();
   });
+  listen(window, gURLBar.popup, "popuphiding", function() {
+    if (pref("minifyResults"))
+      for (let i = 0; i < popup.richlistbox.childNodes.length; i++)
+        maximizeItem(popup.richlistbox.childNodes[i]);
+    gURLBar.popup.adjustHeight();
+  });
+
+  // Making the style of richlist items normal
+  unload(function() {
+    for (let i = 0; i < popup.richlistbox.childNodes.length; i++)
+      maximizeItem(popup.richlistbox.childNodes[i]);
+    gURLBar.popup.adjustHeight();
+  }, window);
 
   // Getting the current search engine
   let currentSearchEngine = Services.search.currentEngine;
@@ -643,9 +670,11 @@ function helpAutoCompleteSearch(window) {
     // trim the leading/trailing whitespace
     let trimmedSearchString = gURLBar.value.slice(0, gURLBar.selectionStart).trim();
     let firefoxEntries = 0, searchEntries = 0,i = 0;
+    let maxFxEntries = Math.max(6, existingItemsCount - results.length);
+    origItemStyle = popup.richlistbox.childNodes[0].style;
     while (i < popup._maxResults) {
       // Firest allow firefox results to popup (max 6)
-      if (firefoxEntries < 6 && i < existingItemsCount && searchEntries < 6) {
+      if (firefoxEntries < maxFxEntries && i < existingItemsCount && searchEntries < results.length) {
         if (!isURI(popup.richlistbox.childNodes[i].getAttribute("url"))
           && popup.richlistbox.childNodes[i].getAttribute("title")
           .toLowerCase().indexOf(trimmedSearchString) < 0) {
@@ -662,12 +691,12 @@ function helpAutoCompleteSearch(window) {
         continue;
       }
       // Now show search suggestions
-      else if (firefoxEntries < 6 && searchEntries < 6) {
+      else if (firefoxEntries < maxFxEntries && searchEntries < results.length) {
         startingIndex = firefoxEntries;
         searchEntries++;
       }
-      else if (firefoxEntries >= 6 && searchEntries < 6) {
-        startingIndex = 6;
+      else if (firefoxEntries >= maxFxEntries && searchEntries < results.length) {
+        startingIndex = maxFxEntries;
         searchEntries++;
       }
       else
@@ -690,7 +719,7 @@ function helpAutoCompleteSearch(window) {
       item.setAttribute("url", url);
       item.setAttribute("title", title);
       item.setAttribute("type",(i == startingIndex)? "suggestfirst": "suggesthint");
-      item.setAttribute("text", isURI(results[0])? "": trimmedSearchString);
+      item.setAttribute("text", isURI(results[i])? "": trimmedSearchString);
 
       if (i < existingItemsCount) {
         // Using the already present entry
@@ -700,11 +729,39 @@ function helpAutoCompleteSearch(window) {
       else {
         // Appending a new entry in the richlistbox
         item.className = "autocomplete-richlistitem";
-        item.collapsed = false;
         popup.richlistbox.appendChild(item);
       }
+      if (pref("minifyResults"))
+        minify(item);
       i++;
     }
+    popup.adjustHeight();
+  };
+
+  // Function to minify the richBox items
+  function minify(item) {
+    item._titleBox.flex = 0;
+    item._urlBox.style.display = "-moz-box";
+    item._urlBox.flex = 0;
+    item._urlBox.style.margin = "-21px 5px 21px "
+    + Math.max((item._titleBox.boxObject.width + 100),300) + "px";
+    item._urlOverflowEllipsis.style.display = "-moz-box";
+    item._urlOverflowEllipsis.style.margin = "-21px 0px 21px "
+    + (item._urlBox.boxObject.width + item._urlBox.boxObject.x) + "px";
+    item.setAttribute("style", "overflow:hidden;max-height:25px !important;");
+  }
+  // Function to maximize richlist items
+  maximizeItem = function(item) {
+    item._titleBox.flex = 1;
+    item._urlBox.style.display = "-moz-box";
+    item._urlBox.flex = 1;
+    item._urlBox.style.margin = "0";
+    item._urlOverflowEllipsis.style.display = "-moz-box";
+    item._urlOverflowEllipsis.style.margin = "0";
+    try {
+      item.setAttribute("style", origItemStyle);
+    } catch (ex) {}
+    item._adjustAcItem();
   };
 
   // Handle result function for this local xmlQuery onload
@@ -1064,9 +1121,11 @@ function addPreviews(window) {
   let lastUpdatedTime = 0, currentTime;
 
   // Shorten the results so that previews are visible
-  let origRows = urlBar.getAttribute("maxrows");
-  urlBar.setAttribute("maxrows", 3);
-  unload(function() urlBar.setAttribute("maxrows", origRows), window);
+  if (!pref("showSearchSuggestion")) {
+    let origRows = urlBar.getAttribute("maxrows");
+    urlBar.setAttribute("maxrows", 6);
+    unload(function() urlBar.setAttribute("maxrows", origRows), window);
+  }
 
   let preview;
   // Provide a way to get rid of the preview from the current tab
@@ -1156,7 +1215,7 @@ function addPreviews(window) {
      // Only auto-load some types of uris
     if (url == null)
       url = urlBar.value;
-    if (!searchSuggestionDisplayed) {
+    if (!searchSuggestionDisplayed || startingIndex > 0) {
       if (url.search('://') == -1)
         url = "http://" + url;
       // Only preivew certain websites and only if they have been suggested
@@ -1242,7 +1301,7 @@ function addPreviews(window) {
       return;
 
     // Make sure nothing is selected if not suggesting search
-    if (popup.selectedIndex > -1 && !searchSuggestionDisplayed && !pref("instantPreviewEverything")) {
+    if (popup.selectedIndex > -1 && startingIndex != 0 && !pref("instantPreviewEverything")) {
       removePreview();
       return;
     }
@@ -1253,7 +1312,7 @@ function addPreviews(window) {
       return;
     }
     // Make sure we have either a domain suggested or a search suggestion
-    else if (isURI(urlBar.value) == null && !searchSuggestionDisplayed) {
+    else if (isURI(urlBar.value) == null) {
       removePreview();
       return;
     }
