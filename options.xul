@@ -35,12 +35,20 @@
       when there is no result available in the Awesomebar Popup.
   </setting>
 
+  <setting pref="extensions.AutoComplete.minifyResults"
+    title="Contract the Search Suggestions to save Space"
+    type="bool" />
+
   <setting pref="extensions.AutoComplete.showInstantPreview"
     title="Instantly Preview domains and search results"
     type="bool"/>
 
   <setting pref="extensions.AutoComplete.instantPreviewEverything"
     title="Instantly Preview every result of Awesomebar Popup on hover/up/down"
+    type="bool"/>
+
+  <setting pref="extensions.AutoComplete.openInNewTab"
+    title="Open results from Awesomebar Bar popup in a New Tab"
     type="bool"/>
 
   <setting pref="extensions.AutoComplete.showDomains"
