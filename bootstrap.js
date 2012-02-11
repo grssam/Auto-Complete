@@ -689,7 +689,6 @@ function helpAutoCompleteSearch(window) {
     let firefoxEntries = 0, searchEntries = 0,i = 0;
     let maxFxEntries = Math.max(6, existingItemsCount - results.length);
     origItemStyle = popup.richlistbox.childNodes[0].style;
-    let totalNodes = popup.richlistbox.childNodes.length;
     while (i < popup._maxResults) {
       // Firest allow firefox results to popup (max 6)
       if (firefoxEntries < maxFxEntries && i < existingItemsCount && searchEntries < results.length) {
@@ -718,9 +717,8 @@ function helpAutoCompleteSearch(window) {
         startingIndex = maxFxEntries;
         searchEntries++;
       }
-      else if (i < totalNodes) {
+      else if (popup.richlistbox.childNodes[i]) {
         popup.richlistbox.removeChild(popup.richlistbox.childNodes[i]);
-        totalNodes--;
         continue;
       }
       else
@@ -760,12 +758,6 @@ function helpAutoCompleteSearch(window) {
       i++;
     }
     popup.adjustHeight();
-    async(function() {
-      popup.style.height = popup.richlistbox.childNodes[popup.richlistbox.childNodes.length - 1].boxObject.y
-        + popup.richlistbox.childNodes[popup.richlistbox.childNodes.length - 1].boxObject.height
-        - popup.richlistbox.childNodes[0].boxObject.y;
-    },500);
-    //popup.adjustHeight();
   };
 
   // Function to minify the richBox items
@@ -773,7 +765,7 @@ function helpAutoCompleteSearch(window) {
     item._titleBox.flex = 1;
     item._urlBox.collapsed = true;
     item._urlOverflowEllipsis.collapsed = true;
-    item.setAttribute("style", "overflow-y:hidden;height:25px !important;border:1px red solid;");
+    item.setAttribute("style", "overflow-y:hidden;height:25px !important;");
   }
   // Function to maximize richlist items
   maximizeItem = function(item) {
@@ -895,18 +887,13 @@ function addAutoCompleteSearch() {
     makeWindowHelpers(window).async(function() {
       gURLBar.popup.adjustHeight();
     }, 50);
-    // Check again if we should autocomlete to google suggestion or not
-    makeWindowHelpers(window).async(function() {
-      if (gURLBar.popup.richlistbox.childNodes[0].getAttribute('title').search(results[0]) == -1)
-        gURLBar.value = gURLBar.value.slice(gURLBar.selectionStart);
-    }, 200);
   };
 
   handleSearchResults2 = function() {
     let {gURLBar} = windowSet.activeWindow;
     xmlQuery.open('GET','http://google.com/complete/search?output=toolbar&q='
       + encodeURIComponent(gURLBar.value.slice(0, gURLBar.selectionStart)), true);
-    currentSearchTerm = gURLBar.value.slice(0, gURLBar.selectionStart);
+    currentSearchTerm = encodeURIComponent(gURLBar.value.slice(0, gURLBar.selectionStart));
     xmlQuery.send(null);
   };
 
