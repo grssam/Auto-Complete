@@ -291,8 +291,9 @@ function addEnterSelects(window) {
         for (let i = 0; i < popup.richlistbox.childNodes.length; i++)
           maximizeItem(popup.richlistbox.childNodes[i]);
 
-      if (pref("showSearchSuggestion"))
+      if (pref("showSearchSuggestion")) {
         popup.adjustHeight();
+      }
 
       // Don't bother if something is already selected
       if (popup.selectedIndex >= 0)
@@ -578,10 +579,8 @@ function helpAutoCompleteSearch(window) {
       case event.DOM_VK_DOWN:
       case event.DOM_VK_UP:
         // Hack around to display the results values in the gURLBar
-        if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved && startingIndex > 0) {
-          gURLBar.value = results[curIndex - startingIndex];
-          gURLBar.setSelectionRange(currentSearchTerm.length, results[curIndex - startingIndex].length);
-        }
+        if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved && startingIndex > 0)
+          gURLBar.value = unescape(results[curIndex - startingIndex]);
         break;
       case event.DOM_VK_ENTER:
       case event.DOM_VK_RETURN:
@@ -688,6 +687,7 @@ function helpAutoCompleteSearch(window) {
     let firefoxEntries = 0, searchEntries = 0,i = 0;
     let maxFxEntries = Math.max(6, existingItemsCount - results.length);
     origItemStyle = popup.richlistbox.childNodes[0].style;
+    let totalNodes = popup.richlistbox.childNodes.length;
     while (i < popup._maxResults) {
       // Firest allow firefox results to popup (max 6)
       if (firefoxEntries < maxFxEntries && i < existingItemsCount && searchEntries < results.length) {
@@ -696,7 +696,6 @@ function helpAutoCompleteSearch(window) {
           .toLowerCase().indexOf(trimmedSearchString) < 0) {
             let (item = popup.richlistbox.childNodes[i]) {
               popup.richlistbox.removeChild(item);
-              item.collapsed = true;
               popup.richlistbox.appendChild(item);
             }
         }
@@ -716,6 +715,11 @@ function helpAutoCompleteSearch(window) {
       else if (firefoxEntries >= maxFxEntries && searchEntries < results.length) {
         startingIndex = maxFxEntries;
         searchEntries++;
+      }
+      else if (i < totalNodes) {
+        popup.richlistbox.removeChild(popup.richlistbox.childNodes[i]);
+        totalNodes--;
+        continue;
       }
       else
         break;
@@ -754,28 +758,25 @@ function helpAutoCompleteSearch(window) {
       i++;
     }
     popup.adjustHeight();
+    async(function() {
+      popup.style.height = popup.richlistbox.childNodes[popup.richlistbox.childNodes.length - 1].boxObject.y
+        + popup.richlistbox.childNodes[popup.richlistbox.childNodes.length - 1].boxObject.height
+        - popup.richlistbox.childNodes[0].boxObject.y;
+    },500);
+    //popup.adjustHeight();
   };
 
   // Function to minify the richBox items
   function minify(item) {
-    item._titleBox.flex = 0;
-    item._urlBox.style.display = "-moz-box";
-    item._urlBox.flex = 0;
-    item._urlBox.style.margin = "-21px 5px 21px "
-    + Math.max((item._titleBox.boxObject.width + 100),300) + "px";
-    item._urlOverflowEllipsis.style.display = "-moz-box";
-    item._urlOverflowEllipsis.style.margin = "-21px 0px 21px "
-    + (item._urlBox.boxObject.width + item._urlBox.boxObject.x) + "px";
-    item.setAttribute("style", "overflow:hidden;max-height:25px !important;");
+    item._titleBox.flex = 1;
+    item._urlBox.collapsed = true;
+    item._urlOverflowEllipsis.collapsed = true;
+    item.setAttribute("style", "overflow-y:hidden;height:25px !important;border:1px red solid;");
   }
   // Function to maximize richlist items
   maximizeItem = function(item) {
-    item._titleBox.flex = 1;
-    item._urlBox.style.display = "-moz-box";
-    item._urlBox.flex = 1;
-    item._urlBox.style.margin = "0";
-    item._urlOverflowEllipsis.style.display = "-moz-box";
-    item._urlOverflowEllipsis.style.margin = "0";
+    item._urlBox.collapsed = false;
+    item._urlOverflowEllipsis.collapsed = false;
     try {
       item.setAttribute("style", origItemStyle);
     } catch (ex) {}
@@ -859,7 +860,9 @@ function addAutoCompleteSearch() {
       getCommentAt: function(i) {
         if (i == 0 && results[i].slice(0, gURLBar.value.length).toLowerCase()
           != gURLBar.value.toLowerCase()) {
-            gURLBar.popup.selectedIndex = -1;
+            makeWindowHelpers(window).async(function() {
+              gURLBar.popup.selectedIndex = -1;
+            }, 100);
             return "Did you mean: " + results[i];
         }
         else if (i == 0) {
@@ -1386,11 +1389,11 @@ function addPreviews(window) {
         break;
       case event.DOM_VK_UP:
       case event.DOM_VK_DOWN:
-        removePreview();
         if (!pref("instantPreviewEverything"))
           break;
         if (shouldRemove) {
           shouldRemove = false;
+          removePreview();
           break;
         }
         showPreview(popup.richlistbox.getItemAtIndex(popup.selectedIndex)._url.textContent);
