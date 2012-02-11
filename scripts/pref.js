@@ -46,11 +46,10 @@ pref.defaults = {
   showDomains: true,
   showSearchKeywords: true,
   showSearchSuggestion: true,
-  minifyResults: false,
+  minifyResults: true,
   showInstantPreview: true,
   selectFirst: true,
   instantPreviewEverything: true,
-  openInNewTab: false,
   autoFillDefault: Services.prefs.getBranch("browser.urlbar.").getBoolPref("autoFill")
 };
 

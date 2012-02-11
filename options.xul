@@ -47,10 +47,6 @@
     title="Instantly Preview every result of Awesomebar Popup on hover/up/down"
     type="bool"/>
 
-  <setting pref="extensions.AutoComplete.openInNewTab"
-    title="Open results from Awesomebar Bar popup in a New Tab"
-    type="bool"/>
-
   <setting pref="extensions.AutoComplete.showDomains"
     title="Suggest domains (e.g., mozilla.com) as keywords"
     type="bool"/>

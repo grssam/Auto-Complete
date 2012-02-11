@@ -60,7 +60,7 @@ let worker = null;
 // Global variables to keep track of keyboard movements
 let hasMoved, hasDeleted, userInput;
 // Global results arrays
-let results = [], startingIndex = 0, origItemStyle;
+let results = [], startingIndex = 100, origItemStyle;
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
@@ -249,9 +249,8 @@ function addKeywordSuggestions(window) {
     // See if we can suggest a keyword if it isn't the current query
     let query = gURLBar.textValue;
     // Don't suggest anything is bookmark keyword or uri or suggesting to search
-    if (isKeyword(query) || isURI(query.split(/[ ]+/)[0])
-      || (searchSuggestionDisplayed && startingIndex == 0))
-        return;
+    if (isKeyword(query) || isURI(query.split(/[ ]+/)[0]) || startingIndex <= 0)
+      return;
 
     let keyword = getKeyword(query);
     if (keyword == null || keyword == query)
@@ -284,16 +283,16 @@ function addEnterSelects(window) {
         orig.apply(this, arguments);
       } catch (ex) {}
 
-      if (pref("showSearchSuggestion")) {
-        if (pref("minifyResults"))
-          for (let i = 0; i < popup.richlistbox.childNodes.length; i++)
-            maximizeItem(popup.richlistbox.childNodes[i]);
-        popup.adjustHeight();
-      }
-
       // Inform that popup has been loaded/filled
       if (popup.mPopupOpen)
         worker.postMessage(JSON.stringify([false]));
+
+      if (searchSuggestionDisplayed && pref("minifyResults"))
+        for (let i = 0; i < popup.richlistbox.childNodes.length; i++)
+          maximizeItem(popup.richlistbox.childNodes[i]);
+
+      if (pref("showSearchSuggestion"))
+        popup.adjustHeight();
 
       // Don't bother if something is already selected
       if (popup.selectedIndex >= 0)
@@ -394,12 +393,14 @@ function addEnterSelects(window) {
       return;
     }
 
-    // Prevent the default enter (return) behavior
-    aEvent.preventDefault();
+    if (!searchSuggestionDisplayed || (searchSuggestionDisplayed && popup.selectedIndex < startingIndex)) {
+      // Prevent the default enter (return) behavior
+      aEvent.preventDefault();
 
-    // Calling handleEnter will cause the selected popup item to be used
-    gURLBar.mEnterEvent = aEvent;
-    gURLBar.controller.handleEnter(true);
+      // Calling handleEnter will cause the selected popup item to be used
+      gURLBar.mEnterEvent = aEvent;
+      gURLBar.controller.handleEnter(true);
+    }
   });
 
   // Detect deletes of text to avoid accidentally deleting items
@@ -577,9 +578,21 @@ function helpAutoCompleteSearch(window) {
       case event.DOM_VK_DOWN:
       case event.DOM_VK_UP:
         // Hack around to display the results values in the gURLBar
-        if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved) {
+        if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved && startingIndex > 0) {
           gURLBar.value = results[curIndex - startingIndex];
           gURLBar.setSelectionRange(currentSearchTerm.length, results[curIndex - startingIndex].length);
+        }
+        break;
+      case event.DOM_VK_ENTER:
+      case event.DOM_VK_RETURN:
+        if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved && startingIndex > 0
+          && results[curIndex - startingIndex]) {
+            event.preventDefault();
+            event.stopPropagation();
+            window.alert("A");
+            window.openUILinkIn(isURI(results[curIndex - startingIndex])?
+              results[curIndex - startingIndex]: convertToSearchURL(results[curIndex - startingIndex]),
+              (event.altKey || event.metaKey || event.ctrlKey)? "tab": "current");
         }
         break;
     }
@@ -598,12 +611,16 @@ function helpAutoCompleteSearch(window) {
       return;
     userInput = true;
     let {gURLBar} = window;
-    if (startingIndex == 0 && results[0] && !hasMoved && searchSuggestionDisplayed) {
+    if (startingIndex <= 0 && results[0] && !hasMoved && !hasDeleted) {
       let val = gURLBar.value;
-      if (val == results[0].slice(0, val.length)) {
+      if (val == results[0].slice(0, val.length) && val.length > 1) {
         gURLBar.value = results[0];
         gURLBar.setSelectionRange(val.length, results[0].length);
       }
+    }
+    else {
+      results = [];
+      startingIndex = 100;
     }
     searchSuggestionDisplayed = false;
     async(function() {
@@ -613,7 +630,7 @@ function helpAutoCompleteSearch(window) {
         xmlQuery.abort();
         handleSearchResults2();
       }
-    }, 500);
+    }, 600);
   });
   listen(window, gURLBar.popup, "popupshown", function() {
     searchSuggestionDisplayed = false;
@@ -640,7 +657,7 @@ function helpAutoCompleteSearch(window) {
     currentSearchEngine = Services.search.getEngines()[0];
 
   let engineName = currentSearchEngine.name;
-  startingIndex = 0;
+  startingIndex = 100;
 
   // Defining the XML Query
   let xmlQuery = Cc["@mozilla.org/xmlextras/xmlhttprequest;1"]
@@ -686,6 +703,8 @@ function helpAutoCompleteSearch(window) {
         }
         else {
           firefoxEntries++;
+          if (pref("minifyResults"))
+            maximizeItem(popup.richlistbox.childNodes[i]);
           i++;
         }
         continue;
@@ -835,7 +854,7 @@ function addAutoCompleteSearch() {
 
     searchSuggestionDisplayed = true;
     userInput = false;
-    startingIndex = 0;
+    startingIndex = -1;
 
     searchListener.onSearchResult(search, {
       getCommentAt: function(i) {
@@ -869,6 +888,9 @@ function addAutoCompleteSearch() {
       searchResult: Ci.nsIAutoCompleteResult.RESULT_SUCCESS,
       get searchString() gURLBar.value,
     });
+    makeWindowHelpers(window).async(function() {
+      gURLBar.popup.adjustHeight();
+    }, 50);
   };
 
   handleSearchResults2 = function() {
@@ -1215,14 +1237,23 @@ function addPreviews(window) {
      // Only auto-load some types of uris
     if (url == null)
       url = urlBar.value;
-    if (!searchSuggestionDisplayed || startingIndex > 0) {
+    if (!searchSuggestionDisplayed || (startingIndex > 0 && startingIndex < 100)) {
       if (url.search('://') == -1)
         url = "http://" + url;
       // Only preivew certain websites and only if they have been suggested
-      if (url.search(/^(data|ftp|https?):/) == -1 || (!justCompleted && !hasMoved)
-        || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|tor)$/) != -1) {
+      if (url.search(/^(data|ftp|https?):/) == -1 || (!justCompleted && !hasMoved) || url.length > 180
+        || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|torrent|7z|m4v|wav|exe|dmg|ogg|webm|ogv|aac)(\?[0-9]{0,})?$/) != -1) {
           removePreview();
           return;
+      }
+      // One more check to confim a normal page being previewed
+      // Checking the non suggested entries for possible malformed url
+      if (hasMoved && popup.selectedIndex < startingIndex) {
+        let item = popup.richlistbox.childNodes[popup.selectedIndex];
+        if (item.getAttribute("title") == item.getAttribute("url") && !isURI(item.getAttribute("url"))) {
+          removePreview();
+          return;
+        }
       }
     }
     else {
@@ -1311,12 +1342,17 @@ function addPreviews(window) {
       showPreview(popup.richlistbox.getItemAtIndex(0)._url.textContent);
       return;
     }
+    else if (searchSuggestionDisplayed && popup.selectedIndex >= startingIndex
+      && hasMoved && results[popup.selectedIndex - startingIndex]) {
+      let i = popup.selectedIndex - startingIndex;
+      showPreview(isURI(results[i])? results[i]: convertToSearchURL(results[i]));
+      return;
+    }
     // Make sure we have either a domain suggested or a search suggestion
     else if (isURI(urlBar.value) == null) {
       removePreview();
       return;
     }
-
     showPreview();
   });
 
@@ -1359,7 +1395,7 @@ function addPreviews(window) {
           shouldRemove = false;
           break;
         }
-        showPreview(popup.richlistbox.getItemAtIndex(0)._url.textContent);
+        showPreview(popup.richlistbox.getItemAtIndex(popup.selectedIndex)._url.textContent);
         break;
     }
   });
