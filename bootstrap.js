@@ -557,6 +557,7 @@ function helpAutoCompleteSearch(window) {
         }
         hasDeleted = true;
         searchSuggestionDisplayed = false;
+        results = [];
         break;
       case event.DOM_VK_DOWN:
       case event.DOM_VK_UP:
@@ -584,6 +585,7 @@ function helpAutoCompleteSearch(window) {
         break;
       case event.DOM_VK_ENTER:
       case event.DOM_VK_RETURN:
+        results = [];
         if (curIndex >= startingIndex && searchSuggestionDisplayed && hasMoved && startingIndex > 0
           && results[curIndex - startingIndex]) {
             event.preventDefault();
@@ -893,6 +895,11 @@ function addAutoCompleteSearch() {
     makeWindowHelpers(window).async(function() {
       gURLBar.popup.adjustHeight();
     }, 50);
+    // Check again if we should autocomlete to google suggestion or not
+    makeWindowHelpers(window).async(function() {
+      if (gURLBar.popup.richlistbox.childNodes[0].getAttribute('title').search(results[0]) == -1)
+        gURLBar.value = gURLBar.value.slice(gURLBar.selectionStart);
+    }, 200);
   };
 
   handleSearchResults2 = function() {
