@@ -589,7 +589,6 @@ function helpAutoCompleteSearch(window) {
           && results[curIndex - startingIndex]) {
             event.preventDefault();
             event.stopPropagation();
-            window.alert("A");
             window.openUILinkIn(isURI(results[curIndex - startingIndex])?
               results[curIndex - startingIndex]: convertToSearchURL(results[curIndex - startingIndex]),
               (event.altKey || event.metaKey || event.ctrlKey)? "tab": "current");
@@ -1241,8 +1240,9 @@ function addPreviews(window) {
       if (url.search('://') == -1)
         url = "http://" + url;
       // Only preivew certain websites and only if they have been suggested
-      if (url.search(/^(data|ftp|https?):/) == -1 || (!justCompleted && !hasMoved) || url.length > 180
-        || url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|torrent|7z|m4v|wav|exe|dmg|ogg|webm|ogv|aac)(\?[0-9]{0,})?$/) != -1) {
+      if (url.search(/^(data|ftp|https?):/) == -1 || (!justCompleted && !hasMoved 
+        && !pref("instantPreviewEverything")) || url.length > 180 || 
+        url.search(/\.(rar|zip|xpi|mp3|mpeg|mp4|wmv|avi|torrent|7z|m4v|wav|exe|dmg|ogg|webm|ogv|aac)(\?[0-9]{0,})?$/) != -1) {
           removePreview();
           return;
       }
@@ -1386,8 +1386,6 @@ function addPreviews(window) {
         break;
       case event.DOM_VK_UP:
       case event.DOM_VK_DOWN:
-        if (!hasMoved)
-          break;
         removePreview();
         if (!pref("instantPreviewEverything"))
           break;
@@ -1395,7 +1393,7 @@ function addPreviews(window) {
           shouldRemove = false;
           break;
         }
-        showPreview(popup.richlistbox.getItemAtIndex(popup.selectedIndex)._url.textContent);
+        showPreview(popup.richlistbox.getItemAtIndex(0)._url.textContent);
         break;
     }
   });
