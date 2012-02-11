@@ -1393,7 +1393,7 @@ function addPreviews(window) {
           shouldRemove = false;
           break;
         }
-        showPreview(popup.richlistbox.getItemAtIndex(0)._url.textContent);
+        showPreview(popup.richlistbox.getItemAtIndex(popup.selectedIndex)._url.textContent);
         break;
     }
   });
