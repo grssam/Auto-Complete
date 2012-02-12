@@ -41,7 +41,7 @@ let suggestedByOrder = false;
 // Keep track of what is being queried
 let currentQuery = "";
 let suggestionIndex = 0;
-let justCopleted = false;
+let justCompleted = false;
 
 // Keep track of suggestions based on current query/ref/params
 let suggestions = [];
@@ -1254,13 +1254,13 @@ function addPreviews(window) {
       }
     }
     else {
-      if (hasDeleted || isURI(url)) {
+      if (hasDeleted) {
         removePreview();
         return;
       }
       // Check for frequency of preview displayed
       currentTime = new Date();
-      if (currentTime.getTime() - lastUpdatedTime < 500)
+      if (currentTime.getTime() - lastUpdatedTime < 250)
         return;
       else
         lastUpdatedTime = currentTime.getTime();
@@ -1340,10 +1340,17 @@ function addPreviews(window) {
       return;
     }
     else if (searchSuggestionDisplayed && popup.selectedIndex >= startingIndex
-      && hasMoved && results[popup.selectedIndex - startingIndex]) {
-      let i = popup.selectedIndex - startingIndex;
-      showPreview(isURI(results[i])? results[i]: convertToSearchURL(results[i]));
-      return;
+      && results[popup.selectedIndex - startingIndex]) {
+        let i = popup.selectedIndex - startingIndex;
+        showPreview(isURI(results[i])? results[i]: convertToSearchURL(results[i]));
+        urlBar.value = results[i];
+        return;
+    }
+    else if (popup.selectedIndex >= 0 && popup.selectedIndex < startingIndex 
+      && startingIndex > -1 && startingIndex < 100) {
+        showPreview(popup.richlistbox.getItemAtIndex(popup.selectedIndex)._url.textContent);
+        urlBar.value = popup.richlistbox.getItemAtIndex(popup.selectedIndex)._url.textContent;
+        return;
     }
     // Make sure we have either a domain suggested or a search suggestion
     else if (isURI(urlBar.value) == null) {
@@ -1394,7 +1401,6 @@ function addPreviews(window) {
         break;
     }
   });
-
   // Clicking a result will save the preview
   listen(window, popup, "click", function(event) persistPreview(event));
 }
