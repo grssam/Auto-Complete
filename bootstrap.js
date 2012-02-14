@@ -463,6 +463,9 @@ function convertToSearchURL(query) {
 function isURI(input) {
   if (!input)
     return null;
+  if (input.match(/^[^:.\\\/&?]{2,}[:]{1}/))
+    return input;
+
   if (input.match(/ /) == null) {
     try {
       // Quit early if the input is already a URI
@@ -505,6 +508,7 @@ function addSearchSuggestion(window) {
     return function(event) {
       if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
         if ((searchSuggestionDisplayed || popup._matchCount == 0 || !popup.mPopupOpen)
+          && (popup.selectedIndex >= startingIndex || popup.selectedIndex == -1)
           && gURLBar.value.length > 0)
             this.value = getSearchURL(this.value);
       return orig.call(this, event);
@@ -602,9 +606,11 @@ function helpAutoCompleteSearch(window) {
   // on blurring out of urlBar and on focus
   listen(window, gURLBar, "blur", function() {
     userInput = hasDeleted = hasMoved = searchSuggestionDisplayed = false;
+    results = [];
   });
   listen(window, gURLBar, "focus", function() {
     userInput = hasDeleted = hasMoved = searchSuggestionDisplayed = false;
+    results = [];
   });
   listen(window, gURLBar, "input", function() {
     if (hasMoved || hasDeleted)
@@ -630,7 +636,7 @@ function helpAutoCompleteSearch(window) {
         xmlQuery.abort();
         handleSearchResults2();
       }
-    }, 600);
+    }, 750);
   });
   listen(window, gURLBar.popup, "popupshown", function() {
     searchSuggestionDisplayed = false;
@@ -835,6 +841,9 @@ function addAutoCompleteSearch() {
       window = Cc["@mozilla.org/embedcomp/window-watcher;1"]
         .getService(Ci.nsIWindowWatcher).activeWindow;
     }
+    // fall back on this now 
+    if (!window)
+      window = Services.wm.getMostRecentWindow("navigator:browser");
     let {gURLBar} = window;
     results = [];
     try {
@@ -849,17 +858,19 @@ function addAutoCompleteSearch() {
     searchSuggestionDisplayed = true;
     userInput = false;
     startingIndex = -1;
+    let numResults = gURLBar.popup._matchCount;
+
+    if (numResults > 0)
+      startingIndex = numResults;
 
     searchListener.onSearchResult(search, {
       getCommentAt: function(i) {
         if (i == 0 && results[i].slice(0, gURLBar.value.length).toLowerCase()
-          != gURLBar.value.toLowerCase()) {
-            makeWindowHelpers(window).async(function() {
-              gURLBar.popup.selectedIndex = -1;
-            }, 100);
+          != gURLBar.value.toLowerCase() && numResults <= 0) {
+            gURLBar.popup.selectedIndex = -1;
             return "Did you mean: " + results[i];
         }
-        else if (i == 0) {
+        else if (i == 0 && numResults <= 0) {
           let ({selectionStart} = gURLBar) {
             gURLBar.value = results[0];
             gURLBar.selectTextRange(selectionStart, results[0].length);
