@@ -333,7 +333,7 @@ function addEnterSelects(window) {
   // Function to display the next suggestion based on current query
   function suggestNextMatch(delta) {
     // If we suggested by order, then don't scrol through alt suggestions
-    if (suggestedByOrder)
+    if (suggestedByOrder || !pref("autoComplete"))
       return;
     suggestionIndex += delta;
     let keyword = getKeyword(currentQuery);
@@ -1431,8 +1431,9 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     unload(function() {
       Services.prefs.getBranch("browser.urlbar.").setBoolPref("autoFill",pref("autoFillDefault"));
     });
-    // Add suggestions to all windows
-    watchWindows(addKeywordSuggestions);
+    // Add suggestions to all windows if pref'd on
+    if (pref("autoComplete"))
+      watchWindows(addKeywordSuggestions);
     // Add enter-selects functionality to all windows
     watchWindows(addEnterSelects);
 
@@ -1460,6 +1461,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   pref.observe([
     "showSearchSuggestion",
     "showInstantPreview",
+    "autoComplete"
   ], reload);
 
   function reload() {
@@ -1473,6 +1475,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     pref.observe([
       "showSearchSuggestion",
       "showInstantPreview",
+      "autoComplete"
     ], reload);
 
     initiateFunctions();

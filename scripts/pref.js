@@ -42,6 +42,7 @@ function pref(key) {
 // Set custom values for this add-on
 pref.root = "extensions.AutoComplete.";
 pref.defaults = {
+  autoComplete: true,
   showBookmarks: true,
   showDomains: true,
   showSearchKeywords: true,
