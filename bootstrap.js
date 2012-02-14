@@ -648,6 +648,19 @@ function helpAutoCompleteSearch(window) {
         maximizeItem(popup.richlistbox.childNodes[i]);
     gURLBar.popup.adjustHeight();
   });
+  listen(window, gURLBar.popup, "mousedown", function(event) {
+    let i = gURLBar.popup.selectedIndex - startingIndex;
+    if (!(pref("showInstantPreview") && pref("instantPreviewEverything"))
+      && i >= 0 && searchSuggestionDisplayed && results[i]
+      && results.length < gURLBar.popup._matchCount) {
+        event.preventDefault();
+        event.stopPropagation();
+        let tab = "current";
+        if (event.metaKey || event.ctrlKey || event.shiftKey)
+          tab = "tab";
+        window.openUILinkIn(isURI(results[i])? results[i]: convertToSearchURL(results[i]), tab);
+    }
+  });
 
   // Making the style of richlist items normal
   unload(function() {
