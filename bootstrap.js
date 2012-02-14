@@ -893,7 +893,7 @@ function addAutoCompleteSearch() {
         else
           return ((!isURI(results[i]))?engineName + " search: ": "") + results[i];
       },
-      getImageAt: function() SEARCH_ICON,
+      getImageAt: function(i) isURI(results[i]) != null && i == 0? '': SEARCH_ICON,
       getLabelAt: function(i) isURI(results[i]) != null? results[i]: convertToSearchURL(results[i]),
       getValueAt: function(i) results[i],
       getStyleAt: function(i) {
