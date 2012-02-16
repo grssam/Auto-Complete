@@ -708,15 +708,17 @@ function helpAutoCompleteSearch(window) {
     let firefoxEntries = 0, searchEntries = 0,i = 0;
     let maxFxEntries = Math.max(6, existingItemsCount - results.length);
     origItemStyle = popup.richlistbox.childNodes[0].style;
+    let itemsDisplaced = 0;
     while (i < popup._maxResults) {
       // Firest allow firefox results to popup (max 6)
       if (firefoxEntries < maxFxEntries && i < existingItemsCount && searchEntries < results.length) {
-        if (!isURI(popup.richlistbox.childNodes[i].getAttribute("url"))
+        if (itemsDisplaced < 4 && !isURI(popup.richlistbox.childNodes[i].getAttribute("url"))
           && popup.richlistbox.childNodes[i].getAttribute("title")
           .toLowerCase().indexOf(trimmedSearchString) < 0) {
             let (item = popup.richlistbox.childNodes[i]) {
               popup.richlistbox.removeChild(item);
               popup.richlistbox.appendChild(item);
+              itemsDisplaced++;
             }
         }
         else {
@@ -1257,8 +1259,12 @@ function addPreviews(window) {
      // Only auto-load some types of uris
     if (url == null)
       url = urlBar.value;
+    if (urlBar.value == "") {
+      removePreview();
+      return;
+    }
     if (!searchSuggestionDisplayed || (startingIndex > 0 && startingIndex < 100)) {
-      if (url.search('://') == -1)
+      if (url.search('://') == -1 && url.match(/^[^:.\\\/&?]{2,}[:]{1}/) == null)
         url = "http://" + url;
       // Only preivew certain websites and only if they have been suggested
       if (url.search(/^(data|ftp|https?):/) == -1 || (!justCompleted && !hasMoved 
