@@ -51,6 +51,7 @@ pref.defaults = {
   showInstantPreview: true,
   selectFirst: true,
   instantPreviewEverything: true,
+  deleteLastOnBackspace: true,
   autoFillDefault: Services.prefs.getBranch("browser.urlbar.").getBoolPref("autoFill")
 };
 

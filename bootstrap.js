@@ -60,7 +60,7 @@ let worker = null;
 // Global variables to keep track of keyboard movements
 let hasMoved, hasDeleted, userInput;
 // Global results arrays
-let results = [], startingIndex = 100, origItemStyle;
+let results = [], startingIndex = 100, origItemStyle, deleteLastOnBackspace;
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
@@ -466,6 +466,10 @@ function isURI(input) {
   if (input.match(/^[^:.\\\/&?]{2,}[:]{1}/))
     return input;
 
+  // Matching ip addresses
+  if (input.match(/^(https?:\/\/)?([^\/]+:[^\/]+@)?([0-9]{1,3}\.?){4}/))
+    return input;
+
   if (input.match(/ /) == null) {
     try {
       // Quit early if the input is already a URI
@@ -557,7 +561,8 @@ function helpAutoCompleteSearch(window) {
         if (searchSuggestionDisplayed && event.keyCode != event.DOM_VK_DELETE) {
           event.preventDefault();
           event.stopPropagation();
-          gURLBar.value = gURLBar.value.slice(0, gURLBar.selectionStart - 1);
+          gURLBar.value = gURLBar.value.slice(0, gURLBar.selectionStart -
+                                                 (deleteLastOnBackspace?1:0));
         }
         hasDeleted = true;
         searchSuggestionDisplayed = false;
@@ -1447,6 +1452,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   function initiateFunctions() {
     // Disable inline auto complete of firefox
     Services.prefs.getBranch("browser.urlbar.").setBoolPref("autoFill", false);
+    deleteLastOnBackspace = pref("deleteLastOnBackspace");
     unload(function() {
       Services.prefs.getBranch("browser.urlbar.").setBoolPref("autoFill",pref("autoFillDefault"));
     });
@@ -1483,6 +1489,14 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     "autoComplete"
   ], reload);
 
+  pref.observe([
+    "deleteLastOnBackspace"
+  ], minorUpdates);
+
+  function minorUpdates() {
+    deleteLastOnBackspace = pref("deleteLastOnBackspace");
+  }
+
   function reload() {
     unload();
     pref.observe([
@@ -1496,6 +1510,10 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
       "showInstantPreview",
       "autoComplete"
     ], reload);
+
+    pref.observe([
+      "deleteLastOnBackspace"
+    ], minorUpdates);
 
     initiateFunctions();
   }

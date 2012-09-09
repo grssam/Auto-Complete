@@ -33,6 +33,10 @@
     title="Auto Complete the words as you type in the Location Bar"
     type="bool" />
 
+  <setting pref="extensions.AutoComplete.deleteLastOnBackspace"
+    title="Delete the last typed character along with the autocompleted part on pressing Back Space"
+    type="bool" />
+
   <setting pref="extensions.AutoComplete.showSearchSuggestion"
     title="Suggest to search for the input" type="bool">
       Adds an option to search via current Search Engine,
