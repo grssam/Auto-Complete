@@ -463,6 +463,11 @@ function convertToSearchURL(query) {
 function isURI(input) {
   if (!input)
     return null;
+
+  // Matching about and similar pages pages
+  if (input.match(/^(about|wysiwyg|mailto):/))
+    return input;
+
   if (input.match(/^[^:.\\\/&?]{2,}[:]{1}/))
     return input;
 
