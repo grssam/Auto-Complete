@@ -7,7 +7,7 @@
     <homepageURL>https://addons.mozilla.org/en-US/firefox/addon/auto-complete/</homepageURL>
     <id>AutoComplete@girishsharma</id>
     <name>Auto Complete</name>
-    <version>3.1</version>
+    <version>3.2</version>
     <bootstrap>true</bootstrap>
     <type>2</type>
     <optionsType>2</optionsType>
@@ -16,7 +16,7 @@
       <r:Description>
         <id>{ec8030f7-c20a-464f-9b0e-13a3a9e97384}</id>
         <minVersion>4.0</minVersion>
-        <maxVersion>13.0a1</maxVersion>
+        <maxVersion>18.0a1</maxVersion>
       </r:Description>
     </targetApplication>
   </r:Description>

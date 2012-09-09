@@ -61,6 +61,8 @@ let worker = null;
 let hasMoved, hasDeleted, userInput;
 // Global results arrays
 let results = [], startingIndex = 100, origItemStyle, deleteLastOnBackspace;
+// Global whitelisted regular expressions.
+let whitelistedRegex = [];
 
 // Lookup a keyword to suggest for the provided query
 function getKeyword(query) {
@@ -464,10 +466,21 @@ function isURI(input) {
   if (!input)
     return null;
 
+  // Matching whitelisted regular expressions.
+  if (whitelistedRegex.length > 0) {
+    try {
+      for (let i = 0; i < whitelistedRegex.length; i++)
+        if (new RegExp(whitelistedRegex[i].split("/")[1],
+                       whitelistedRegex[i].split("/")[2]).test(input))
+          return input;
+    } catch (ex) {}
+  }
+
   // Matching about and similar pages pages
   if (input.match(/^(about|wysiwyg|mailto):/))
     return input;
 
+  
   if (input.match(/^[^:.\\\/&?]{2,}[:]{1}/))
     return input;
 
@@ -1458,6 +1471,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     // Disable inline auto complete of firefox
     Services.prefs.getBranch("browser.urlbar.").setBoolPref("autoFill", false);
     deleteLastOnBackspace = pref("deleteLastOnBackspace");
+    whitelistedRegex = pref("whitelistedRegexPatterns").split(/\s?,\s?/);
     unload(function() {
       Services.prefs.getBranch("browser.urlbar.").setBoolPref("autoFill",pref("autoFillDefault"));
     });
@@ -1500,6 +1514,7 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
 
   function minorUpdates() {
     deleteLastOnBackspace = pref("deleteLastOnBackspace");
+    whitelistedRegex = pref("whitelistedRegexPatterns").split(/\s?,\s?/);
   }
 
   function reload() {
@@ -1517,7 +1532,8 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
     ], reload);
 
     pref.observe([
-      "deleteLastOnBackspace"
+      "deleteLastOnBackspace",
+      "whitelistedRegexPatterns"
     ], minorUpdates);
 
     initiateFunctions();

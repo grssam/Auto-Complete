@@ -52,6 +52,7 @@ pref.defaults = {
   selectFirst: true,
   instantPreviewEverything: true,
   deleteLastOnBackspace: true,
+  whitelistedRegexPatterns: "",
   autoFillDefault: Services.prefs.getBranch("browser.urlbar.").getBoolPref("autoFill")
 };
 

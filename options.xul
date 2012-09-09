@@ -43,6 +43,12 @@
       when there is no result available in the Awesomebar Popup.
   </setting>
 
+  <setting pref="extensions.AutoComplete.whitelistedRegexPatterns"
+    title="Force treat input matching these regular expressions as web addresses" type="string">
+      Auto Complete will not show search suggestions for input matching these regular expressions.
+      Type as many regular expressions separated by a comma(,).
+  </setting>
+
   <setting pref="extensions.AutoComplete.minifyResults"
     title="Contract the Search Suggestions to save Space"
     type="bool" />
