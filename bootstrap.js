@@ -61,6 +61,8 @@ let worker = null;
 let hasMoved, hasDeleted, userInput;
 // Global results arrays
 let results = [], startingIndex = 100, origItemStyle, deleteLastOnBackspace;
+// Track if to open link to the changelog post.
+let openSite = false;
 // Global whitelisted regular expressions.
 let whitelistedRegex = [];
 
@@ -1459,7 +1461,7 @@ function addPreviews(window) {
 }
 
 // Handle the add-on being activated on install/enable 
-function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
+function startup(data, reason) AddonManager.getAddonByID(data.id, function(addon) {
   // Load various javascript includes for helper functions
   ["pref", "helper"].forEach(function(fileName) {
     let fileURI = addon.getResourceURI("scripts/" + fileName + ".js");
@@ -1540,6 +1542,17 @@ function startup(data) AddonManager.getAddonByID(data.id, function(addon) {
   }
 
   initiateFunctions();
+
+  
+  if ((reason == 7 || reason == 5) && data.version == "3.2")
+    openSite = true;
+  if (openSite)
+    watchWindows(function(window) {
+      if (openSite) {
+        window.openUILinkIn("http://grssam.com/?p=259", "tab");
+        openSite = false;
+      }
+    });
 });
 
 function shutdown(data, reason) {
