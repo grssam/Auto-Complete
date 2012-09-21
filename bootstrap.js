@@ -469,7 +469,7 @@ function isURI(input) {
     return null;
 
   // Matching whitelisted regular expressions.
-  if (whitelistedRegex.length > 0) {
+  if (whitelistedRegex.length > 0 && whitelistedRegex[0].length > 0) {
     try {
       for (let i = 0; i < whitelistedRegex.length; i++)
         if (new RegExp(whitelistedRegex[i].split("/")[1],
@@ -1511,7 +1511,8 @@ function startup(data, reason) AddonManager.getAddonByID(data.id, function(addon
   ], reload);
 
   pref.observe([
-    "deleteLastOnBackspace"
+    "deleteLastOnBackspace",
+    "whitelistedRegexPatterns"
   ], minorUpdates);
 
   function minorUpdates() {
@@ -1544,7 +1545,7 @@ function startup(data, reason) AddonManager.getAddonByID(data.id, function(addon
   initiateFunctions();
 
   
-  if ((reason == 7 || reason == 5) && data.version == "3.2")
+  if ((reason == 7 || reason == 5) && data.version == "3.3")
     openSite = true;
   if (openSite)
     watchWindows(function(window) {
