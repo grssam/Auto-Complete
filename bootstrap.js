@@ -529,13 +529,13 @@ function addSearchSuggestion(window) {
 
   // Convert inputs to search urls
   change(gURLBar, "_canonizeURL", function(orig) {
-    return function(event) {
+    return function(event, callback) {
       if (event != null && !(event.ctrlKey || event.shiftKey || event.metaKey))
         if ((searchSuggestionDisplayed || popup._matchCount == 0 || !popup.mPopupOpen)
           && (popup.selectedIndex >= startingIndex || popup.selectedIndex == -1)
           && gURLBar.value.length > 0)
             this.value = getSearchURL(this.value);
-      return orig.call(this, event);
+      return orig.call(this, event, callback);
     };
   });
 
